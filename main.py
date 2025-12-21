@@ -14,6 +14,8 @@ from src.results_manager import ResultsManager
 from src.tournament_manager import TournamentManager
 from src.utils import Team, generate_team_id
 from src.config import BID_TIMEOUT_SECONDS, RANDOM_SEED
+from typing import Dict, List, Optional
+import json
 
 
 def setup_logging(verbose: bool = True, log_file: str = None):
@@ -53,7 +55,66 @@ def setup_logging(verbose: bool = True, log_file: str = None):
         root_logger.addHandler(file_handler)
 
 
-def load_teams_from_directory(teams_dir: str) -> list:
+def load_team_registration(registration_file: str = None) -> Dict[str, List[str]]:
+    """
+    Load team registration mapping from JSON file.
+    
+    Args:
+        registration_file: Path to team_registration.json
+        
+    Returns:
+        Dictionary mapping team_name to list of member IDs
+    """
+    if registration_file is None:
+        registration_file = Path("teams/team_registration.json")
+    else:
+        registration_file = Path(registration_file)
+    
+    if not registration_file.exists():
+        logging.warning(f"Team registration file not found: {registration_file}")
+        return {}
+    
+    try:
+        with open(registration_file, 'r') as f:
+            data = json.load(f)
+            
+        # Convert to dictionary for easy lookup
+        team_members = {}
+        for team in data.get("teams", []):
+            team_name = team.get("team_name")
+            members = team.get("members", [])
+            if team_name:
+                team_members[team_name] = members
+        
+        logging.info(f"Loaded registration for {len(team_members)} teams")
+        return team_members
+        
+    except Exception as e:
+        logging.error(f"Error loading team registration: {e}")
+        return {}
+
+
+def find_team_by_student_id(student_id: str, registration_file: str = None) -> Optional[str]:
+    """
+    Find team name for a given student ID.
+    
+    Args:
+        student_id: Student ID to search for
+        registration_file: Path to team_registration.json
+        
+    Returns:
+        Team name if found, None otherwise
+    """
+    team_members = load_team_registration(registration_file)
+    
+    for team_name, members in team_members.items():
+        if student_id in members:
+            return team_name
+    
+    return None
+
+
+def load_teams_from_directory(teams_dir: str, registration_file: str = None) -> list:
     """
     Load teams from directory structure.
     
@@ -63,9 +124,11 @@ def load_teams_from_directory(teams_dir: str) -> list:
             bidding_agent.py
         team2/
             bidding_agent.py
+        team_registration.json
     
     Args:
         teams_dir: Path to teams directory
+        registration_file: Optional path to team_registration.json (defaults to teams_dir/team_registration.json)
     
     Returns:
         List of Team objects
@@ -77,6 +140,11 @@ def load_teams_from_directory(teams_dir: str) -> list:
         logging.error(f"Teams directory not found: {teams_dir}")
         return teams
     
+    # Load team registration if available
+    if registration_file is None:
+        registration_file = teams_path / "team_registration.json"
+    team_members_map = load_team_registration(str(registration_file))
+    
     for team_dir in teams_path.iterdir():
         if not team_dir.is_dir():
             continue
@@ -86,15 +154,20 @@ def load_teams_from_directory(teams_dir: str) -> list:
             logging.warning(f"No bidding_agent.py found in {team_dir}")
             continue
         
+        # Get member IDs from registration
+        team_name = team_dir.name
+        members = team_members_map.get(team_name, [])
+        
         team = Team(
             team_id=team_dir.name,
-            team_name=team_dir.name,
+            team_name=team_name,
             agent_file_path=str(agent_file.absolute()),
-            registration_timestamp=datetime.fromtimestamp(team_dir.stat().st_ctime)
+            registration_timestamp=datetime.fromtimestamp(team_dir.stat().st_ctime),
+            members=members
         )
         
         teams.append(team)
-        logging.info(f"Loaded team: {team.team_id}")
+        logging.info(f"Loaded team: {team.team_id} (members: {len(members)})")
     
     return teams
 

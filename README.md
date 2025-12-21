@@ -33,6 +33,11 @@ python main.py --mode validate --validate teams/my_team/bidding_agent.py
 python simulator.py --your-agent teams/my_team/bidding_agent.py --num-games 10
 ```
 
+### 5. Register Your Team
+Your team name (folder name) and student IDs must be registered before submission. Contact the course staff with:
+- Your chosen team name (must match your folder name exactly)
+- List of all team member student IDs
+
 ---
 
 ## 📋 Competition Overview
@@ -55,17 +60,19 @@ python simulator.py --your-agent teams/my_team/bidding_agent.py --num-games 10
 
 ```
 AGT_Competition_Package/
-├── STUDENT_GUIDE.md          # Complete implementation guide
+├── STUDENT_GUIDE.md          # Complete implementation guide (includes registration)
 ├── QUICK_REFERENCE.md         # Quick reference
 ├── AGENT_TEMPLATE.py          # Starter template
 ├── simulator.py               # Test your agent locally
 ├── main.py                    # Competition system
+├── validate_registration.py   # Validate team registration
 ├── examples/                  # Reference strategies
 │   ├── truthful_bidder.py
 │   ├── budget_aware_bidder.py
 │   ├── strategic_bidder.py
 │   └── random_bidder.py
 ├── teams/                     # Your workspace
+│   └── team_registration.json # Team-to-student mapping
 └── src/                       # Competition system code
 ```
 

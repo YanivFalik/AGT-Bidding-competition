@@ -10,7 +10,8 @@
 6. [Strategy Development Tips](#strategy-development-tips)
 7. [Common Pitfalls](#common-pitfalls)
 8. [Debugging Guide](#debugging-guide)
-9. [Submission Guidelines](#submission-guidelines)
+9. [Team Registration](#team-registration)
+10. [Submission Guidelines](#submission-guidelines)
 
 ---
 
@@ -755,23 +756,145 @@ class BiddingAgent:
 
 ---
 
+## 🎫 Team Registration
+
+### Overview
+
+Before submitting your code, your team must be registered with the course staff. This maps your student IDs to your team name for grading and accountability.
+
+### Registration Requirements
+
+Provide the following to the course staff:
+
+1. **Team Name** - Must match your submission folder name exactly (case-sensitive)
+2. **Team Members** - List of all student IDs
+
+### Example Registration
+
+If your team is named `team_alpha` with three members:
+- Team folder: `teams/team_alpha/`
+- Student IDs: `["123456789", "987654321", "555555555"]`
+
+### Important Notes
+
+- ✅ Team name must exactly match your folder name
+- ✅ All team members must be registered before submission deadline
+- ❌ Late registrations may not be accepted
+
+### Validation (For Course Staff)
+
+Course staff can validate the registration file using:
+
+```bash
+python validate_registration.py
+```
+
+This checks:
+- JSON syntax validity
+- No duplicate team names
+- No duplicate student IDs across teams
+- All team folders match registration entries
+
+---
+
+## 📤 Submission Guidelines
+
+### Submission Checklist
+
+Before submitting, ensure:
+
+- [ ] Team is registered with course staff (team name + student IDs)
+- [ ] Agent passes validation: `python main.py --mode validate --validate teams/your_team/bidding_agent.py`
+- [ ] Agent tested with simulator: `python simulator.py --your-agent teams/your_team/bidding_agent.py`
+- [ ] No syntax errors or import issues
+- [ ] Bidding function completes within 3 seconds
+- [ ] Agent handles all edge cases (zero budget, final round, etc.)
+- [ ] Code is properly commented and readable
+- [ ] Team folder structure is correct:
+  ```
+  teams/your_team_name/
+      bidding_agent.py
+  ```
+
+### File Structure
+
+Your submission must follow this exact structure:
+
+```python
+class BiddingAgent:
+    def __init__(self):
+        # Your initialization code
+        pass
+    
+    def on_auction_start(self, total_rounds: int, total_items: int, 
+                        initial_budget: float) -> bool:
+        # Initialize game state
+        return True
+    
+    def on_new_round(self, round_number: int) -> bool:
+        # Prepare for new round
+        return True
+    
+    def on_valuation_received(self, item_id: str, valuation: float) -> bool:
+        # Store valuation
+        return True
+    
+    def bidding_function(self, item_id: str) -> float:
+        # Return your bid (must complete in 3 seconds)
+        return bid
+    
+    def on_auction_result(self, item_id: str, winner_team_id: str, 
+                         winner_bid: float, price: float) -> bool:
+        # Update state with auction outcome
+        return True
+```
+
+### Common Submission Errors
+
+1. **Wrong folder structure** - Must be `teams/team_name/bidding_agent.py`
+2. **Missing methods** - All required methods must be implemented
+3. **Class name mismatch** - Class must be named `BiddingAgent`
+4. **Timeout issues** - Bidding function exceeds 3 seconds
+5. **Unhandled exceptions** - Agent crashes on edge cases
+6. **Team name mismatch** - Folder name doesn't match registration
+
+### Testing Before Submission
+
+```bash
+# 1. Validate syntax and structure
+python main.py --mode validate --validate teams/your_team/bidding_agent.py
+
+# 2. Test against examples (quick test)
+python simulator.py --your-agent teams/your_team/bidding_agent.py --num-games 5
+
+# 3. Extensive testing (recommended)
+python simulator.py --your-agent teams/your_team/bidding_agent.py --num-games 50
+
+# 4. Test with verbose output for debugging
+python simulator.py --your-agent teams/your_team/bidding_agent.py --num-games 5 --verbose
+```
+
+---
+
 ## 📚 Additional Resources
 
-- **Competition Rules**: See `agt_competition_rules.md` for official rules
-- **Design Document**: See `design.md` for system architecture
-- **Example Agents**: Check `examples/` folder for different strategies
-- **Course Forum**: Post questions and discuss strategies
+- **QUICK_REFERENCE.md** - Quick reference for common tasks
+- **Example Agents** - Check `examples/` folder for different strategies
+- **validate_registration.py** - Validation tool for course staff
+- **Course Forum** - Post questions and discuss strategies
 
 ---
 
 ## 🏆 Good Luck!
 
-Remember:
-- Start simple, iterate and improve
-- Test extensively before submitting
-- Budget management is crucial
-- Learn from opponent behavior
-- Have fun and be creative!
+### Remember:
+
+- ✅ Start simple, iterate and improve
+- ✅ Test extensively before submitting
+- ✅ Register your team early
+- ✅ Budget management is crucial
+- ✅ Learn from opponent behavior
+- ✅ Handle edge cases properly
+- ✅ Have fun and be creative!
 
 May the best strategy win! 🎯
-
