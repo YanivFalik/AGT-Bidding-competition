@@ -108,6 +108,8 @@ class ItemBeliefs:
         Where the division by (min - max) is to shift our density to the range [min,max] instead of [0,1]
         """
         def second_highest_pdf_uniform(p_val: float, range_min: float, range_max: float) -> float:
+            if p_val < range_min or p_val > range_max:
+                return 0.0
             y = (p_val - range_min) / (range_max - range_min)
             return 20 * (y ** 3) * (1.0 - y) * (1.0 / (range_max - range_min))
 
