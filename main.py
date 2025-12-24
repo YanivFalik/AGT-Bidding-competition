@@ -35,6 +35,11 @@ def setup_logging(verbose: bool = True, log_file: str = None):
     simple_formatter = logging.Formatter(
         '%(asctime)s - %(levelname)s - %(message)s'
     )
+
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except:
+        pass  # older Python / some environments
     
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
@@ -49,7 +54,7 @@ def setup_logging(verbose: bool = True, log_file: str = None):
     # File handler (if specified)
     if log_file:
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(detailed_formatter)
         root_logger.addHandler(file_handler)
