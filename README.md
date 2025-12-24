@@ -1,5 +1,5 @@
 hiiiii this is yaniv
-
+this is from vscode
 # 🎯 AGT Auto-Bidding Competition - Student Package
 
 Welcome to the AGT 2025-2026 Auto-Bidding Challenge!

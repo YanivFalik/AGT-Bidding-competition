@@ -15,7 +15,7 @@ import multiprocessing as mp
 from threading import Thread
 import queue
 
-from src.base_agent import BiddingAgent
+from examples.truthful_bidder import BiddingAgent
 
 
 logger = logging.getLogger(__name__)
