@@ -96,3 +96,42 @@ class ItemBeliefs:
         """
         # TODO: implement Bayesian update using a likelihood model for prices.
         return
+    
+    def __str__(self, digits: int = 3) -> str:
+        """
+        Pretty string representation of current beliefs for all items.
+
+        Args:
+            digits: number of decimal digits to show for probabilities
+        """
+        fmt = f"{{:.{digits}f}}"
+
+        # Sort items by valuation (descending), for readability
+        items = sorted(
+            self.valuation_vector.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        lines = []
+        header = (
+            "Item Beliefs (initial or updated)\n"
+            "--------------------------------\n"
+            "item_id   value   P(High)   P(All)    P(Low)"
+        )
+        lines.append(header)
+
+        for item_id, v in items:
+            b = self.beliefs[item_id]
+            line = (
+                f"{item_id:<9} "
+                f"{v:>5.1f}   "
+                f"{fmt.format(b.p_high):>7}   "
+                f"{fmt.format(b.p_all):>7}   "
+                f"{fmt.format(b.p_low):>7}"
+            )
+            lines.append(line)
+
+        return "\n".join(lines)
+
+

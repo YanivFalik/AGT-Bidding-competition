@@ -18,6 +18,13 @@ Key Features:
 """
 
 from typing import Dict, List
+import os 
+import sys
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+
 from item_beliefs import ItemBeliefs
 
 class BiddingAgent:
@@ -39,7 +46,12 @@ class BiddingAgent:
         self.rounds_completed = 0
         self.total_rounds = 15  # Always 15 rounds per game
         
+        # ---------
+        # TODO-----
+        # ---------
+        
         self.item_beliefs = ItemBeliefs(valuation_vector)
+        print(self.item_beliefs)
     
     def _update_available_budget(self, item_id: str, winning_team: str, 
                                  price_paid: float):
