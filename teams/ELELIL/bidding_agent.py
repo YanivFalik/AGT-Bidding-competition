@@ -17,6 +17,26 @@ Key Features:
 - [Feature 3]
 """
 
+import logging
+import os
+
+def _make_agent_logger(name: str = "agent_tmp_logger") -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False  # IMPORTANT: don't pass messages to root/main handlers
+
+    # Add handler only once (avoid duplicate lines if module is reloaded)
+    if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+        log_path = os.path.join(os.path.dirname(__file__), "tmp.log")
+        fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+        fh.setLevel(logging.INFO)
+        fh.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
+        logger.addHandler(fh)
+
+    return logger
+
+agent_logger = _make_agent_logger()
+
 from typing import Dict, List
 import os 
 import sys
@@ -26,6 +46,7 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 from item_beliefs import ItemBeliefs
+from opponent_model import OpponentModeling
 
 class BiddingAgent:
 
@@ -49,9 +70,14 @@ class BiddingAgent:
         # ---------
         # TODO-----
         # ---------
-        
+
         self.item_beliefs = ItemBeliefs(valuation_vector)
-        print(self.item_beliefs)
+        self.opponent_model = OpponentModeling(opponent_teams)
+        agent_logger.info(
+            f"init: team={self.team_id}, budget={self.budget}, rounds_completed={self.rounds_completed}"
+        )
+        agent_logger.info(str(self.item_beliefs))
+
     
     def _update_available_budget(self, item_id: str, winning_team: str, 
                                  price_paid: float):
@@ -76,9 +102,18 @@ class BiddingAgent:
         # ============================================================
         # TODO: implement 
         # ============================================================
-        
+        self.item_beliefs.update_with_price(item_id, price_paid)
+        agent_logger.info(
+            f"Round {self.rounds_completed}, item {item_id}, price_paid {price_paid}"
+        )
+        agent_logger.info(str(self.item_beliefs))
+
+        self.opponent_model.update(winning_team, price_paid)
         
         return True
+    
+    def calc_shading(self, item_id: str) -> float: 
+        return 1
     
     def bidding_function(self, item_id: str) -> float:
         my_valuation = self.valuation_vector.get(item_id, 0)
@@ -95,7 +130,7 @@ class BiddingAgent:
         # ============================================================
         
         
-        bid = my_valuation  
+        bid = my_valuation * self.calc_shading(item_id)   
         bid = max(0.0, min(bid, self.budget))
         
         return float(bid)

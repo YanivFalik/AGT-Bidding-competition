@@ -328,18 +328,20 @@ def main():
         sys.exit(1)
     
     # Setup opponents
-    opponents = None
+    opponents = []
     if args.opponent:
-        opponent_path = Path(args.opponent)
-        if not opponent_path.exists():
-            print(f"Error: Opponent file not found: {args.opponent}")
-            sys.exit(1)
-        
-        opponents = [{
-            'team_id': opponent_path.stem,
-            'team_name': opponent_path.stem,
-            'agent_file': str(opponent_path.absolute())
-        }]
+        paths = args.opponent.split(",")
+        opponent_paths = [Path(p) for p in paths]
+        for i, opponent_path in enumerate(opponent_paths):
+            if not opponent_path.exists():
+                print(f"Error: Opponent file not found: {args.opponent}")
+                sys.exit(1)
+            
+            opponents.append({
+                'team_id': f"{opponent_path.stem}_{i}",
+                'team_name': f"{opponent_path.stem}_{i}",
+                'agent_file': str(opponent_path.absolute())
+            })
     
     # Create simulator
     simulator = Simulator(seed=args.seed, timeout=args.timeout)

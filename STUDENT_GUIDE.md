@@ -319,11 +319,10 @@ Use the provided simulator to test against example strategies:
 
 ```bash
 # Test against all example agents (10 games)
-python simulator.py --your-agent teams/your_team_name/bidding_agent.py --num-games 10
+python simulator.py --your-agent teams/ELELIL/bidding_agent.py --num-games 10
 
 # Test against specific opponent
-python simulator.py --your-agent teams/your_team_name/bidding_agent.py \
-                    --opponent examples/strategic_bidder.py --num-games 5
+python simulator.py --your-agent teams/ELELIL/bidding_agent.py  --opponent examples/truthful_bidder.py,examples/truthful_bidder.py,examples/truthful_bidder.py --num-games 100
 
 # Verbose output to see detailed game flow
 python simulator.py --your-agent teams/your_team_name/bidding_agent.py \
