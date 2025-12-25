@@ -51,3 +51,35 @@ Research Questions:
 
 Simple competition strategies: 
     
+
+CompetitorBudget (
+    History
+)
+
+BID(
+    Number Round,
+    Current Util,
+    Item,
+    Budget, 
+    Beliefs, 
+    CompetitorBudget
+) -> R
+
+First strategy: 
+
+We're determinimg how each parameter affects the mukplicity factor. 
+v * round_shade(Number_round) * budget_shade(Budget) * belief_shade(Beliefs) * competitor_shade(CompetitorBudget)
+
+return Value() * Shading()
+
+
+Second Algorithm: 
+Meaningful functions, such as
+ stress factor -> late round, high budget, low util -> increase my bid (bluffing to screw others)
+
+
+Lets define shade -> should return a multplicity factor to the bid. 
+shade: XXX -> [0, 1]
+v * Pi{(1 + shade_i(args))}
+
+main task until next meeting, think of at least 5 shade functions. 
