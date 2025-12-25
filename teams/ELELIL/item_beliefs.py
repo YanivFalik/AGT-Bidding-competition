@@ -124,7 +124,11 @@ class ItemBeliefs:
         w_sum = w_high + w_mixed + w_low
 
         # Update item beliefs
-        self.beliefs[item_id] = Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
+        if ((price_paid > 10 and self.valuation_vector[item_id] < 10) or 
+            (price_paid < 10 and self.valuation_vector[item_id] > 10)): 
+            self.beliefs[item_id] = Belief(0, 1, 0)
+        else:
+            self.beliefs[item_id] = Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
 
         # Mark item as seen, then update global priors and refresh unseen items
         self.seen_items.add(item_id)
