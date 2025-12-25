@@ -80,6 +80,7 @@ Meaningful functions, such as
 
 Lets define shade -> should return a multplicity factor to the bid. 
 shade: XXX -> [0, 1]
-v * Pi{(1 + shade_i(args))}
+Strategy set is subset of available shades, marked S 
+v * Pi_{shade in S}({(1 + shade_i(args))})
 
 main task until next meeting, think of at least 5 shade functions. 
