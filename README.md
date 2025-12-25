@@ -1,4 +1,4 @@
-hiiiii this is torat hamenatzhim
+we are ELELIL
 this is from vscode
 # 🎯 AGT Auto-Bidding Competition - Student Package
 
