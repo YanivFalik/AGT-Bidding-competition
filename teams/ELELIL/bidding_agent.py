@@ -102,7 +102,7 @@ class BiddingAgent:
         # ============================================================
         # TODO: implement 
         # ============================================================
-        self.item_beliefs.update_with_price(item_id, price_paid)
+        self.item_beliefs.update_according_to_price(item_id, price_paid)
         agent_logger.info(
             f"Round {self.rounds_completed}, item {item_id}, price_paid {price_paid}"
         )

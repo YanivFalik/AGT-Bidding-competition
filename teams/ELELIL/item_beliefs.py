@@ -29,6 +29,8 @@ class ItemBeliefs:
     HIGH_RANGE = [10, 20]
     MIXED_RANGE = [1, 20]
 
+    MIXED_ENSURANCE_THRESHOLD = 1
+
     def __init__(self, valuation_vector: Dict[str, float]):
         self.valuation_vector = dict(valuation_vector)
 
@@ -40,12 +42,85 @@ class ItemBeliefs:
         self.beliefs: Dict[str, Belief] = {}
         self.seen_items: Set[str] = set()  # items already auctioned / revealed
 
-        # Initial beliefs using initial priors
-        for item_id, v in self.valuation_vector.items():
-            self.beliefs[item_id] = self._posterior_from_value(float(v))
+        self.expected_high_remainder = self.TOTAL_HIGH
+        self.expected_mixed_remainder = self.TOTAL_MIXED
+        self.expected_low_remainder = self.TOTAL_LOW
+
+        self._update_group_possible_candidates()
+        self.beliefs = self._create_posteriors_from_values(self.valuation_vector)
+
 
     def get(self, item_id: str) -> Belief:
         return self.beliefs[item_id]
+
+
+    def _init_beliefs(self):
+        for item_id, v in self.valuation_vector.items():
+            self.beliefs[item_id] = self._posterior_from_value(float(v))
+
+    def update_according_to_price(self, item_id: str, price_paid: float):
+        self._update_posterior_with_price(item_id, price_paid)
+        self.seen_items.add(item_id)
+        self._update_group_possible_candidates()
+        self._recompute_remainders_from_seen()
+        self._update_global_priors()
+        self._update_posteriors_of_unseens()
+
+    def _recompute_remainders_from_seen(self):
+        expected_used_high = sum(self.beliefs[i].p_high for i in self.seen_items)
+        expected_used_mixed = sum(self.beliefs[i].p_mixed for i in self.seen_items)
+        expected_used_low = sum(self.beliefs[i].p_low for i in self.seen_items)
+
+        # Keep nonnegative (should already be, unless upstream logic forces too many)
+        self.expected_high_remainder = max(0.0, self.TOTAL_HIGH - expected_used_high)
+        self.expected_mixed_remainder = max(0.0, self.TOTAL_MIXED - expected_used_mixed)
+        self.expected_low_remainder = max(0.0, self.TOTAL_LOW - expected_used_low)
+
+
+    def _update_posteriors_of_unseens(self):
+        unseen = {k:v for k,v in self.valuation_vector.items() if k not in self.seen_items}
+        posteriors = self._create_posteriors_from_values(unseen)
+        normalized_posteriors = self._normalize_by_group_remainders(posteriors)
+        for item_id, belief in normalized_posteriors.items():
+            self.beliefs[item_id] = belief
+
+    def _create_posteriors_from_values(self, items: Dict[str, float]):
+        return {item_id : self._posterior_from_value(float(v)) for item_id,v in items.items()}
+
+
+    def _normalize_by_group_remainders(self, posteriors: Dict[str, Belief]):
+        cumulative_high_prob = sum(belief.p_high for belief in posteriors.values())
+        cumulative_mixed_prob = sum(belief.p_mixed for belief in posteriors.values())
+        cumulative_low_prob = sum(belief.p_low for belief in posteriors.values())
+
+        high_factor = self.expected_high_remainder / cumulative_high_prob if cumulative_high_prob > 0 else 1.0
+        mixed_factor = self.expected_mixed_remainder / cumulative_mixed_prob if cumulative_mixed_prob > 0 else 1.0
+        low_factor = self.expected_low_remainder / cumulative_low_prob if cumulative_low_prob > 0 else 1.0
+
+        normalized_posteriors = {}
+        for item_id, belief in posteriors.items():
+            factored_high = belief.p_high * high_factor
+            factored_low = belief.p_low * low_factor
+            factored_mixed = belief.p_mixed * mixed_factor
+            total_factor = factored_high + factored_low + factored_mixed
+            if total_factor == 0:
+                normalized_posteriors[item_id] = belief
+                continue
+
+            normalized_posteriors[item_id] = Belief(
+                factored_high / total_factor,
+                factored_mixed / total_factor,
+                factored_low / total_factor
+            )
+        return normalized_posteriors
+
+    def _update_group_possible_candidates(self):
+        self.possible_highs = [item_id for item_id, v in self.valuation_vector.items() if
+                               v >= self.HIGH_RANGE[0]
+                               and (item_id not in self.beliefs or self.beliefs[item_id].p_mixed < 1)]
+        self.possible_lows = [item_id for item_id, v in self.valuation_vector.items() if
+                               v <= self.LOW_RANGE[1]
+                              and (item_id not in self.beliefs or self.beliefs[item_id].p_mixed < 1)]
 
     """
     Bayes’ rule for continuous observations:
@@ -55,15 +130,24 @@ class ItemBeliefs:
     
     Where P(T_i=t) is the global prior updated each round
     """
-
     def _posterior_from_value(self, v: float) -> Belief:
+        # if the number of possible low items is exactly the size of the low item group,
+        # an item with value of less than 10 is surely low
+        if v >= self.HIGH_RANGE[0]:
+            if len(self.possible_highs) == self.TOTAL_HIGH:
+                return Belief(1, 0, 0)
+
+        if v <= self.LOW_RANGE[1]:
+            if len(self.possible_lows) == self.TOTAL_LOW:
+                return Belief(0, 0, 1)
+
         # calculate f(v|T=t) for every value group
         f_high = (1.0 / (self.HIGH_RANGE[1] - self.HIGH_RANGE[0])) if (
-                    self.HIGH_RANGE[0] <= v <= self.HIGH_RANGE[1]) else 0.0
+                self.HIGH_RANGE[0] <= v <= self.HIGH_RANGE[1]) else 0.0
         f_low = (1.0 / (self.LOW_RANGE[1] - self.LOW_RANGE[0])) if (
-                    self.LOW_RANGE[0] <= v <= self.LOW_RANGE[1]) else 0.0
+                self.LOW_RANGE[0] <= v <= self.LOW_RANGE[1]) else 0.0
         f_mixed = (1.0 / (self.MIXED_RANGE[1] - self.MIXED_RANGE[0])) if (
-                    self.MIXED_RANGE[0] <= v <= self.MIXED_RANGE[1]) else 0.0
+                self.MIXED_RANGE[0] <= v <= self.MIXED_RANGE[1]) else 0.0
 
         # calculate P(T=t)f(v|T=t)
         w_high = self.prior_high * f_high
@@ -87,9 +171,7 @@ class ItemBeliefs:
         
         Where l is the likelihood of the second highest bid being p for an item of group t  
     """
-    def update_with_price(self, item_id: str, price_paid: float) -> None:
-        prior_item = self.beliefs[item_id]
-
+    def _update_posterior_with_price(self, item_id: str, price_paid: float) -> None:
         """
         For n i.i.d. samples from Uniform[0,1], the density of the k-th order statistic (k-th item in increasing order) is:
         f_k(y) = n!/((k-1)!(n-k)!)y^(k-1)(1-y)^(n-k)
@@ -113,6 +195,10 @@ class ItemBeliefs:
             y = (p_val - range_min) / (range_max - range_min)
             return 20 * (y ** 3) * (1.0 - y) * (1.0 / (range_max - range_min))
 
+        prior_item = self.beliefs[item_id]
+        if prior_item.p_low == 1.0 and price_paid < self.LOW_RANGE[1] or prior_item.p_high == 1.0 and price_paid > self.HIGH_RANGE[0]:
+            return
+
         like_low = second_highest_pdf_uniform(price_paid, self.LOW_RANGE[0], self.LOW_RANGE[1])
         like_high = second_highest_pdf_uniform(price_paid, self.HIGH_RANGE[0], self.HIGH_RANGE[1])
         like_mixed = second_highest_pdf_uniform(price_paid, self.MIXED_RANGE[0], self.MIXED_RANGE[1])
@@ -124,15 +210,18 @@ class ItemBeliefs:
         w_sum = w_high + w_mixed + w_low
 
         # Update item beliefs
-        if ((price_paid > 10 and self.valuation_vector[item_id] < 10) or 
-            (price_paid < 10 and self.valuation_vector[item_id] > 10)): 
-            self.beliefs[item_id] = Belief(0, 1, 0)
-        else:
-            self.beliefs[item_id] = Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
+        belief: Belief
+        value = self.valuation_vector[item_id]
 
-        # Mark item as seen, then update global priors and refresh unseen items
-        self.seen_items.add(item_id)
-        self._update_global_priors_and_refresh_unseen()
+        min_val = min(price_paid, value)
+        max_val = max(price_paid, value)
+        if min_val <= (self.LOW_RANGE[1] - self.MIXED_ENSURANCE_THRESHOLD) and  max_val >= (self.HIGH_RANGE[0] + self.MIXED_ENSURANCE_THRESHOLD):
+            belief = Belief(0, 1, 0)
+        else:
+            belief = Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
+
+        self.beliefs[item_id] = belief
+
 
     """
     In order to guess the remaining number of items in a value group t we can calculate the expected remainder as follows:
@@ -143,29 +232,17 @@ class ItemBeliefs:
     Now we can estimate the probability of a random item i being in value group t as:
         P(T_i=t) = E[remaining items in t]/total remaining items
     """
-    def _update_global_priors_and_refresh_unseen(self) -> None:
-        if len(self.seen_items) == self.TOTAL_ITEMS:
+    def _update_global_priors(self) -> None:
+        expected_items_left = self.expected_high_remainder + self.expected_low_remainder + self.expected_mixed_remainder
+        if expected_items_left <= 0:
+            self.prior_high = 0.0
+            self.prior_mixed = 0.0
+            self.prior_low = 0.0
             return
 
-        removed_from_high = sum(self.beliefs[i].p_high for i in self.seen_items)
-        removed_from_mixed = sum(self.beliefs[i].p_mixed for i in self.seen_items)
-        removed_from_low = sum(self.beliefs[i].p_low for i in self.seen_items)
-
-        remaining_high = max(self.TOTAL_HIGH - removed_from_high, 0)
-        remaining_mixed = max(self.TOTAL_MIXED - removed_from_mixed, 0)
-        remaining_low = max(self.TOTAL_LOW - removed_from_low, 0)
-
-        # update priors to be E[items left in t]/items left in auction
-        items_left = self.TOTAL_ITEMS - len(self.seen_items)
-        self.prior_high = remaining_high / items_left
-        self.prior_mixed = remaining_mixed / items_left
-        self.prior_low = remaining_low / items_left
-
-        # Recompute beliefs for unseen items from value only, using updated priors
-        for item_id, v in self.valuation_vector.items():
-            if item_id in self.seen_items:
-                continue
-            self.beliefs[item_id] = self._posterior_from_value(float(v))
+        self.prior_high = self.expected_high_remainder / expected_items_left
+        self.prior_mixed = self.expected_mixed_remainder / expected_items_left
+        self.prior_low = self.expected_low_remainder / expected_items_left
 
     # NOTE: __str__ should NOT take digits param; Python expects __str__(self) only.
     def to_str(self, digits: int = 3) -> str:
