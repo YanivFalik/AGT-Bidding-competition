@@ -20,6 +20,10 @@ Key Features:
 import logging
 import os
 
+from src.state_machine import calc_bid
+from src.signals import calc_signals, SignalInput
+
+
 def _make_agent_logger(name: str = "agent_tmp_logger") -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
@@ -62,7 +66,10 @@ class BiddingAgent:
         self.opponent_teams = opponent_teams
         self.utility = 0
         self.items_won = []
-        
+        self.competitor_budgets = { opponent_team: self.budget for opponent_team in opponent_teams }
+
+        print("opponent teams:",opponent_teams)
+
         # Game state tracking
         self.rounds_completed = 0
         self.total_rounds = 15  # Always 15 rounds per game
@@ -90,7 +97,6 @@ class BiddingAgent:
     
     def update_after_each_round(self, item_id: str, winning_team: str, 
                                 price_paid: float):
-        
         # System updates (DO NOT REMOVE)
         self._update_available_budget(item_id, winning_team, price_paid)
         
@@ -102,9 +108,12 @@ class BiddingAgent:
         # ============================================================
         # TODO: implement 
         # ============================================================
+        if winning_team != self.team_id:
+            self.competitor_budgets[winning_team] -= price_paid
+
         self.item_beliefs.update_according_to_price(item_id, price_paid)
         agent_logger.info(
-            f"Round {self.rounds_completed}, item {item_id}, price_paid {price_paid}"
+            f"Round {self.rounds_completed}, item {item_id}, winner {winning_team}, price_paid {price_paid}"
         )
         agent_logger.info(str(self.item_beliefs))
 
@@ -128,10 +137,18 @@ class BiddingAgent:
         # ============================================================
         # TODO: IMPLEMENT YOUR BIDDING STRATEGY HERE
         # ============================================================
-        
-        
-        bid = my_valuation * self.calc_shading(item_id)   
+        signal_dict = calc_signals(SignalInput(
+            item_id = item_id,
+            round_number = self.rounds_completed,
+            our_budget = self.budget,
+            competitor_budgets = self.competitor_budgets,
+            valuation_vector =  self.valuation_vector,
+            posterior_vector = self.item_beliefs.beliefs,
+            seen_items_and_prices = {},
+            current_utility = self.utility
+        ))
+        bid = calc_bid(self.valuation_vector[item_id], signal_dict)
+        agent_logger.info(f"item: {item_id}, val: {self.valuation_vector[item_id]}, bid:, {bid}, signals: {signal_dict}")
         bid = max(0.0, min(bid, self.budget))
         
         return float(bid)
-    
