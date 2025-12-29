@@ -59,11 +59,21 @@ class ItemBeliefs:
             self.beliefs[item_id] = self._posterior_from_value(float(v))
 
     def update_according_to_price(self, item_id: str, price_paid: float):
+        # For price p of item i with value v:
+        # calculate P(T_i=t | v,p) for every t in [LOW,MIXED,HIGH]
         self._update_posterior_with_price(item_id, price_paid)
         self.seen_items.add(item_id)
+
+        # SPECIAL CASE HANDLING: in case of P(T_i=MIXED)=1, remove i from the list of possible LOW/HIGH items
         self._update_group_possible_candidates()
+
+        # Calculate E[items remaining in group t] for every t in [LOW,MIXED,HIGH]
         self._recompute_remainders_from_seen()
+
+        # Update P(T_i=t) to be E[items remaining in t]/E[items remaining] for every t in [LOW,MIXED,HIGH]
         self._update_global_priors()
+
+        # Update P(T_j | v) for all remaining items
         self._update_posteriors_of_unseens()
 
     def _recompute_remainders_from_seen(self):
@@ -80,6 +90,8 @@ class ItemBeliefs:
     def _update_posteriors_of_unseens(self):
         unseen = {k:v for k,v in self.valuation_vector.items() if k not in self.seen_items}
         posteriors = self._create_posteriors_from_values(unseen)
+
+        # normalize posteriors such that sum_i(P(T_i=t)) = E[remaining items in t]
         normalized_posteriors = self._normalize_by_group_remainders(posteriors)
         for item_id, belief in normalized_posteriors.items():
             self.beliefs[item_id] = belief
@@ -88,6 +100,10 @@ class ItemBeliefs:
         return {item_id : self._posterior_from_value(float(v)) for item_id,v in items.items()}
 
 
+    """
+    Update all posteriors such that sum_i(P(T_i=t)) = E[items remaining it t]
+    This is done by calculating factors 
+    """
     def _normalize_by_group_remainders(self, posteriors: Dict[str, Belief]):
         cumulative_high_prob = sum(belief.p_high for belief in posteriors.values())
         cumulative_mixed_prob = sum(belief.p_mixed for belief in posteriors.values())

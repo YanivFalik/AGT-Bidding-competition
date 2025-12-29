@@ -1,7 +1,7 @@
 What should we do: 
     beliefs: 
-        * update item valuation after price reveal. 
-        * update rest of the items after prior change.
+        * update item valuation after price reveal. V 
+        * update rest of the items after prior change. V
         ~~~ lets say after price reveal we're 0.8 sure that it is mixed, how do we model our priors based on our beliefs? 
 
 
@@ -84,3 +84,21 @@ Strategy set is subset of available shades, marked S
 v * Pi_{shade in S}({(1 + shade_i(args))})
 
 main task until next meeting, think of at least 5 shade functions. 
+
+Third Algorithm:
+State Machine where transitions are signal based, each state has a computeBid(self, item_id) method.
+Possible Signals:
+- Phase(Round number) -> { Early, Mid, Late }
+- RelativeBudget(Budget, competitor budgets) -> { Above avg, Below avg, Avg }
+- BudgetRank(Budget, competitor budgets) -> [1,5]
+- DollarUtilization(item_value, item_posteriors)* = E[Utility]/E[Price Paid] -> { <=Threshold, >Threshold }
+- RemainingValueProportion(seen_items, item_valuations) = sum(value of remaining items)/sum(value of all items) -> { 0-1/3, 1/3-2/3, 2/3-1 }
+- ExpectedUtilityToRoundProportion** -> { <<1, =1, >>1 } 
+- OpponentModeling*** -> { Aggressive, Truthful, Conservative }
+- SuccessRate(seen_items, current_utility) -> { HIGH, MID, LOW }
+- ExpectedUtilityRank(current_utility, seen_items, paid_prices)**** -> [1,5]
+
+\* DollarUtilization(item_value, item_posteriors) = E[Utility]/E[Price Paid] = (value - 4th order statistic) / 4th order statistic
+\** ExpectedUtilityToRoundProportion = current_utility / (current_utility + sum(expected utility of remaining items)) / (current_round / total_rounds)
+\*** OpponentModeling (per sold item) = (paid_price - 4th order statistic) / paid_price
+\**** ExpectedUtilityGained(item_id, paid_price) = (5th order statistic or evaluation) - (paid_price)
