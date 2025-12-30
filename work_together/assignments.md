@@ -48,7 +48,7 @@ Research Questions:
     * do we have a target utility we want acheive? we need some benchmarks? 
     An example 
 
-
+yanivyaniv
 Simple competition strategies: 
     
 
