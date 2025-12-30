@@ -1,4 +1,4 @@
-What should we do: 
+What should we do: l
     beliefs: 
         * update item valuation after price reveal. V 
         * update rest of the items after prior change. V
