@@ -67,6 +67,7 @@ class BiddingAgent:
         self.utility = 0
         self.items_won = []
         self.competitor_budgets = { opponent_team: self.budget for opponent_team in opponent_teams }
+        self.seen_items_and_prices: Dict[str, float] = {}
 
         print("opponent teams:",opponent_teams)
 
@@ -108,8 +109,10 @@ class BiddingAgent:
         # ============================================================
         # TODO: implement 
         # ============================================================
+        self.seen_items_and_prices[item_id] = price_paid
         if winning_team != self.team_id:
             self.competitor_budgets[winning_team] -= price_paid
+
 
         self.item_beliefs.update_according_to_price(item_id, price_paid)
         agent_logger.info(
@@ -144,7 +147,7 @@ class BiddingAgent:
             competitor_budgets = self.competitor_budgets,
             valuation_vector =  self.valuation_vector,
             posterior_vector = self.item_beliefs.beliefs,
-            seen_items_and_prices = {},
+            seen_items_and_prices = self.seen_items_and_prices,
             current_utility = self.utility
         ))
         bid = calc_bid(self.valuation_vector[item_id], signal_dict)

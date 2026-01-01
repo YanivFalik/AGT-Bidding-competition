@@ -7,6 +7,7 @@
 # - OpponentModeling*** -> { Aggressive, Truthful, Conservative }
 # - SuccessRate(seen_items, current_utility) -> { HIGH, MID, LOW }
 # - ExpectedUtilityRank(current_utility, seen_items, paid_prices)**** -> [1,5]
+
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Dict
@@ -26,6 +27,12 @@ dollar_utilization_threshold = 0.4
 class DollarUtilizationSignal(Enum):
     GEQ_THRESHOLD = auto()
     LESS_THRESHOLD = auto()
+
+value_proportion_thresholds = [1/3,2/3]
+class RemainingValueProportionSignal(Enum):
+    LOW = auto() # 0-1/3
+    MID = auto() # 1/3-2/3
+    HIGH = auto() # 2/3-1
 
 @dataclass
 class SignalInput:
@@ -65,9 +72,20 @@ def signal_dollar_utilization(input: SignalInput) -> DollarUtilizationSignal:
             if expected_utilization >= dollar_utilization_threshold \
             else DollarUtilizationSignal.LESS_THRESHOLD
 
+def signal_remaining_value_proportion(input: SignalInput) -> RemainingValueProportionSignal:
+    total_value = sum(input.valuation_vector.values())
+    left_value = sum([value for key,value in input.valuation_vector.items() if key not in input.seen_items_and_prices])
+    proportion = left_value / total_value
+    if proportion <= value_proportion_thresholds[0]:
+        return RemainingValueProportionSignal.LOW
+    elif proportion <= value_proportion_thresholds[1]:
+        return RemainingValueProportionSignal.MID
+    return RemainingValueProportionSignal.HIGH
+
 registered_signals = {
     RelativeBudgetSignal.__name__ : signal_relative_budget,
     DollarUtilizationSignal.__name__ : signal_dollar_utilization,
+    RemainingValueProportionSignal.__name__ : signal_remaining_value_proportion,
 }
 
 def calc_signals(input: SignalInput):
