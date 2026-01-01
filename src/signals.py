@@ -10,9 +10,11 @@
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Dict
+from typing import Dict, Callable, Tuple
 
 from teams.ELELIL.item_beliefs import Belief
+
+TOTAL_ROUNDS = 15
 
 high_order_statistics = [11+2/3, 13+1/3, 15, 16+2/3, 18+1/3]
 mixed_order_statistics = [4+1/6, 7+1/3, 10.5, 13+2/3, 16+5/6]
@@ -33,6 +35,12 @@ class RemainingValueProportionSignal(Enum):
     LOW = auto() # 0-1/3
     MID = auto() # 1/3-2/3
     HIGH = auto() # 2/3-1
+
+expected_utility_to_round_threshold = 0.1
+class ExpectedUtilityToRoundProportionSignal(Enum):
+    BELOW_ONE = auto()
+    CLOSE_TO_ONE = auto()
+    ABOVE_ONE = auto()
 
 @dataclass
 class SignalInput:
@@ -82,10 +90,34 @@ def signal_remaining_value_proportion(input: SignalInput) -> RemainingValuePropo
         return RemainingValueProportionSignal.MID
     return RemainingValueProportionSignal.HIGH
 
+# ExpectedUtilityToRoundProportion = (current_utility / (current_utility + sum(expected utility of remaining items))) / (current_round / total_rounds)
+def signal_expected_utility_to_round_proportion(input: SignalInput) -> ExpectedUtilityToRoundProportionSignal:
+
+    def get_expected_utility(value: float, belief: Belief) -> float:
+        expected_fourth_order = belief.p_low * low_order_statistics[4] + belief.p_mixed * mixed_order_statistics[4] + belief.p_high * high_order_statistics[4]
+        return max(value - expected_fourth_order, 0.0)
+
+    expected_utility_out_of_remaining = [get_expected_utility(value, input.posterior_vector[item_id]) \
+                                         for item_id,value in input.valuation_vector.items() \
+                                         if item_id not in input.seen_items_and_prices]
+
+    utility_out_of_expected_remaining = input.current_utility / (input.current_utility + sum(expected_utility_out_of_remaining))
+    round_out_of_total = input.round_number / TOTAL_ROUNDS
+
+    utility_to_round_proportion = utility_out_of_expected_remaining / round_out_of_total
+
+    if utility_to_round_proportion < (1 - expected_utility_to_round_threshold):
+        return ExpectedUtilityToRoundProportionSignal.BELOW_ONE
+    elif utility_to_round_proportion <= (1 + expected_utility_to_round_threshold):
+        return ExpectedUtilityToRoundProportionSignal.CLOSE_TO_ONE
+    return ExpectedUtilityToRoundProportionSignal.ABOVE_ONE
+
+
 registered_signals = {
     RelativeBudgetSignal.__name__ : signal_relative_budget,
     DollarUtilizationSignal.__name__ : signal_dollar_utilization,
     RemainingValueProportionSignal.__name__ : signal_remaining_value_proportion,
+    ExpectedUtilityToRoundProportionSignal.__name__ : signal_expected_utility_to_round_proportion,
 }
 
 def calc_signals(input: SignalInput):

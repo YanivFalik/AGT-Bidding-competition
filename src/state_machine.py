@@ -6,6 +6,7 @@ from src.signals import RelativeBudgetSignal, DollarUtilizationSignal
 
 
 def calc_bid(item_value: float, signals: Dict[str, Enum]):
+    print("Signals:\n"+str(signals))
     match signals[RelativeBudgetSignal.__name__]:
 
         case RelativeBudgetSignal.ABOVE_AVG:
