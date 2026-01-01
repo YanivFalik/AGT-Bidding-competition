@@ -42,6 +42,23 @@ class ExpectedUtilityToRoundProportionSignal(Enum):
     CLOSE_TO_ONE = auto()
     ABOVE_ONE = auto()
 
+class PhaseSignal(Enum):
+    EARLY_PHASE = auto()
+    MID_PHASE = auto()
+    LATE_PHASE = auto()
+
+class BudgetRankSignal(Enum):
+    RANK_1 = auto() # The player is rich
+    RANK_2 = auto()
+    RANK_3 = auto()
+    RANK_4 = auto()
+    RANK_5 = auto()
+
+class SuccessRateSignal(Enum):
+    LOW_SUCCESS_RATE = auto()
+    MID_SUCCESS_RATE = auto()
+    HIGH_SUCCESS_RATE = auto()
+
 @dataclass
 class SignalInput:
     item_id: str
@@ -113,11 +130,55 @@ def signal_expected_utility_to_round_proportion(input: SignalInput) -> ExpectedU
     return ExpectedUtilityToRoundProportionSignal.ABOVE_ONE
 
 
+def signal_phase(input: SignalInput) -> PhaseSignal:
+    """
+    The function takes a signal input and check which phase we are in the game
+    """
+    if input.round_number < 6:
+        return PhaseSignal.EARLY_PHASE
+    elif input.round_number < 11:
+        return PhaseSignal.MID_PHASE
+    return PhaseSignal.LATE_PHASE
+
+def signal_budget_rank(input: SignalInput) -> BudgetRankSignal:
+    """
+    The function takes a signal input and rate our budget base on other 4 players
+    budget in the current round of the game
+    """
+    all_budget = list(input.competitor_budgets) + [input.our_budget]
+    sorted_budget = sorted(all_budget)
+    our_rank_index = sorted_budget.index(input.our_budget)
+    return list(BudgetRankSignal)[our_rank_index]
+
+def signal_success_rate(input: SignalInput) -> SuccessRateSignal:
+    """
+    The function takes a signal input and look at all the seen item and our current
+    utility and measure our success rate based on that : utility / our_valuation_for_seen_items
+    """
+    all_seen_items = input.seen_items_and_prices.keys() # list of all the items we have seen
+    if not all_seen_items:
+        return SuccessRateSignal.MID_SUCCESS_RATE
+
+    total_value_seen = sum(input.valuation_vector[item_id] for item_id in all_seen_items)
+    if total_value_seen == 0:
+        return SuccessRateSignal.MID_SUCCESS_RATE
+
+    utility_rate = input.current_utility / total_value_seen
+    if utility_rate >= 0.25:
+        return SuccessRateSignal.HIGH_SUCCESS_RATE
+    elif utility_rate >= 0.10:
+        return SuccessRateSignal.MID_SUCCESS_RATE
+    return SuccessRateSignal.LOW_SUCCESS_RATE
+
+
 registered_signals = {
     RelativeBudgetSignal.__name__ : signal_relative_budget,
     DollarUtilizationSignal.__name__ : signal_dollar_utilization,
     RemainingValueProportionSignal.__name__ : signal_remaining_value_proportion,
     ExpectedUtilityToRoundProportionSignal.__name__ : signal_expected_utility_to_round_proportion,
+    PhaseSignal.__name__ : signal_phase,
+    BudgetRankSignal.__name__ : signal_budget_rank,
+    SuccessRateSignal.__name__ : signal_success_rate
 }
 
 def calc_signals(input: SignalInput):
