@@ -142,6 +142,7 @@ class BiddingAgent:
         # ============================================================
         signal_dict = calc_signals(SignalInput(
             item_id = item_id,
+            total_rounds = 15,
             round_number = self.rounds_completed,
             our_budget = self.budget,
             competitor_budgets = self.competitor_budgets,

@@ -42,9 +42,17 @@ class ExpectedUtilityToRoundProportionSignal(Enum):
     CLOSE_TO_ONE = auto()
     ABOVE_ONE = auto()
 
+expected_utility_to_round_tolerance = 0.15
+class ExpectedUtilityToRoundProportionSignal(Enum):
+    MUCH_LESS_1 = auto()
+    ABOUT_1 = auto()
+    MUCH_GREATER_1 = auto()
+
+
 @dataclass
 class SignalInput:
     item_id: str
+    total_rounds: 15
     round_number: int
     our_budget: float
     competitor_budgets: Dict[str, float]
@@ -113,11 +121,58 @@ def signal_expected_utility_to_round_proportion(input: SignalInput) -> ExpectedU
     return ExpectedUtilityToRoundProportionSignal.ABOVE_ONE
 
 
+
+def expected_price_paid_4th_order(input: SignalInput, item_id: str) -> float:
+    post = input.posterior_vector[item_id]
+    return (
+        post.p_high * high_order_statistics[4]
+        + post.p_low * low_order_statistics[4]
+        + post.p_mixed * mixed_order_statistics[4]
+    )
+
+def expected_utility_of_item(input: SignalInput, item_id: str) -> float:
+    # expected utility = max(value - expected_price, 0)
+    v = input.valuation_vector[item_id]
+    p = expected_price_paid_4th_order(input, item_id)
+    if p <= 0:
+        return 0.0
+    return max(v - p, 0.0)
+
+def signal_expected_utility_to_round_proportion(input: SignalInput) -> ExpectedUtilityToRoundProportionSignal:
+    # remaining items = items we have valuations+posteriors for, excluding already-seen items
+    seen = set(input.seen_items_and_prices.keys())
+    candidate_items = set(input.valuation_vector.keys()) & set(input.posterior_vector.keys())
+    remaining_items = [iid for iid in candidate_items if iid not in seen]
+
+    remaining_eu = sum(expected_utility_of_item(input, iid) for iid in remaining_items)
+
+    denom = input.current_utility + remaining_eu
+    progress_fraction = (input.current_utility / denom) if denom > 0 else 0.0
+
+    # requires input.total_rounds (recommended)
+    total_rounds = getattr(input, "total_rounds", None)
+    if not total_rounds or total_rounds <= 0:
+        raise ValueError("SignalInput must include total_rounds > 0 for ExpectedUtilityToRoundProportion")
+
+    time_fraction = input.round_number / total_rounds
+    time_fraction = max(time_fraction, 1e-9)  # avoid division by zero in round 0
+
+    ratio = progress_fraction / time_fraction
+
+    if ratio <= 1.0 - expected_utility_to_round_tolerance:
+        return ExpectedUtilityToRoundProportionSignal.MUCH_LESS_1
+    if ratio >= 1.0 + expected_utility_to_round_tolerance:
+        return ExpectedUtilityToRoundProportionSignal.MUCH_GREATER_1
+    return ExpectedUtilityToRoundProportionSignal.ABOUT_1
+
+
 registered_signals = {
     RelativeBudgetSignal.__name__ : signal_relative_budget,
     DollarUtilizationSignal.__name__ : signal_dollar_utilization,
     RemainingValueProportionSignal.__name__ : signal_remaining_value_proportion,
     ExpectedUtilityToRoundProportionSignal.__name__ : signal_expected_utility_to_round_proportion,
+    ExpectedUtilityToRoundProportionSignal.__name__: signal_expected_utility_to_round_proportion
+
 }
 
 def calc_signals(input: SignalInput):
