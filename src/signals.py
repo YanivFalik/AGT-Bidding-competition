@@ -59,16 +59,44 @@ class SuccessRateSignal(Enum):
     MID_SUCCESS_RATE = auto()
     HIGH_SUCCESS_RATE = auto()
 
+class OpponentModelingSignal(Enum):
+    AGGRESSIVE = auto()
+    TRUTHFUL = auto()
+    CONSERVATIVE = auto()
+
+class UtilityRankSignal(Enum):
+    RANK_1 = auto()  # The player most utilized
+    RANK_2 = auto()
+    RANK_3 = auto()
+    RANK_4 = auto()
+    RANK_5 = auto()
+
 @dataclass
 class SignalInput:
     item_id: str
+    our_team: str
     round_number: int
     our_budget: float
     competitor_budgets: Dict[str, float]
+    competitor_items: Dict[str, list[str]]
     valuation_vector: Dict[str,float]
     posterior_vector: Dict[str,Belief]
     seen_items_and_prices: Dict[str,float]
+    seen_items_ordered_by_round: list[str]
     current_utility: float
+
+def get_closest_ith_order(belief: Belief, order: int):
+    max_posterior = max(belief.p_low, belief.p_mixed, belief.p_high)
+    closest_ith_order = high_order_statistics[order-1] if belief.p_high == max_posterior \
+        else mixed_order_statistics[order-1] if belief.p_mixed == max_posterior \
+        else low_order_statistics[order-1]
+    return closest_ith_order
+
+def get_expected_ith_order(belief: Belief, order: int):
+    expected_ith_order = belief.p_low * low_order_statistics[order-1] \
+                         + belief.p_mixed * mixed_order_statistics[order-1] \
+                         + belief.p_high * high_order_statistics[order-1]
+    return expected_ith_order
 
 relative_budget_tolerance = 0.1
 
@@ -85,11 +113,7 @@ def signal_relative_budget(input: SignalInput) -> RelativeBudgetSignal:
 # add into consideration the probability of being larger than the 4th order statistic
 def signal_dollar_utilization(input: SignalInput) -> DollarUtilizationSignal:
     posteriors = input.posterior_vector[input.item_id]
-    expected_fourth_order = (
-            posteriors.p_high * high_order_statistics[4]
-            + posteriors.p_low * low_order_statistics[4]
-            + posteriors.p_mixed * mixed_order_statistics[4]
-    )
+    expected_fourth_order = get_expected_ith_order(posteriors, 4)
     expected_utilization = (input.valuation_vector[input.item_id] - expected_fourth_order) / expected_fourth_order
     print(f"for item {input.item_id}, dollar utilization: {expected_utilization}")
     return (
@@ -111,7 +135,7 @@ def signal_remaining_value_proportion(input: SignalInput) -> RemainingValuePropo
 def signal_expected_utility_to_round_proportion(input: SignalInput) -> ExpectedUtilityToRoundProportionSignal:
 
     def get_expected_utility(value: float, belief: Belief) -> float:
-        expected_fourth_order = belief.p_low * low_order_statistics[4] + belief.p_mixed * mixed_order_statistics[4] + belief.p_high * high_order_statistics[4]
+        expected_fourth_order = get_expected_ith_order(belief, 4)
         return max(value - expected_fourth_order, 0.0)
 
     expected_utility_out_of_remaining = [get_expected_utility(value, input.posterior_vector[item_id]) \
@@ -170,6 +194,52 @@ def signal_success_rate(input: SignalInput) -> SuccessRateSignal:
         return SuccessRateSignal.MID_SUCCESS_RATE
     return SuccessRateSignal.LOW_SUCCESS_RATE
 
+opponent_modeling_look_behind = 2
+opponent_modeling_threshold = 1
+def signal_opponent_modeling(input: SignalInput) -> OpponentModelingSignal:
+    if len(input.seen_items_and_prices) <= opponent_modeling_look_behind:
+        last_items = input.seen_items_ordered_by_round[:]
+    else:
+        last_items = input.seen_items_ordered_by_round[-opponent_modeling_look_behind:]
+
+    if len(last_items) == 0:
+        return OpponentModelingSignal.TRUTHFUL
+
+    diff_avg = sum([input.seen_items_and_prices[item_id] - get_closest_ith_order(item_id, input.posterior_vector[item_id], 4) \
+                    for item_id in last_items]) / len(last_items)
+
+    if -opponent_modeling_threshold <= diff_avg <= opponent_modeling_threshold:
+        return OpponentModelingSignal.TRUTHFUL
+    if diff_avg < -opponent_modeling_threshold:
+        return OpponentModelingSignal.CONSERVATIVE
+    return OpponentModelingSignal.AGGRESSIVE
+
+
+def signal_utility_rank(input: SignalInput) -> UtilityRankSignal:
+    competitor_utilities = {}
+    for team, won_items in input.competitor_items.items():
+        if team == input.our_team:
+            continue
+        competitor_utilities[team] = 0
+        for won_item in won_items:
+            utility = max(get_closest_ith_order(won_item, input.posterior_vector[won_item], 5) - input.seen_items_and_prices[won_item],0)
+            competitor_utilities[team] += utility
+
+    sorted_utilities = sorted(list(competitor_utilities.values()))
+    our_utility = input.current_utility
+    for i, utility in enumerate(sorted_utilities):
+        if our_utility <= utility:
+            if i == 0:
+                return UtilityRankSignal.RANK_5
+            elif i == 1:
+                return UtilityRankSignal.RANK_4
+            elif i == 2:
+                return UtilityRankSignal.RANK_3
+            elif i == 3:
+                return UtilityRankSignal.RANK_2
+            elif i == 4:
+                return UtilityRankSignal.RANK_1
+    return UtilityRankSignal.RANK_1
 
 registered_signals = {
     RelativeBudgetSignal.__name__ : signal_relative_budget,
