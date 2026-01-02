@@ -102,3 +102,9 @@ Possible Signals:
 \** ExpectedUtilityToRoundProportion = current_utility / (current_utility + sum(expected utility of remaining items)) / (current_round / total_rounds)
 \*** OpponentModeling (per sold item) = (paid_price - 4th order statistic) / paid_price
 \**** ExpectedUtilityGained(item_id, paid_price) = (5th order statistic or evaluation) - (paid_price)
+
+
+commands: 
+python simulator.py --your-agent teams/ELELIL/bidding_agent.py  --opponent examples/truthful_bidder.py,examples/truthful_bidder.py,examples/truthful_bidder.py,examples/truthful_bidder.py  --num-games 100
+
+python simulator.py --your-agent teams/ELELIL/bidding_agent.py --num-games 100     
