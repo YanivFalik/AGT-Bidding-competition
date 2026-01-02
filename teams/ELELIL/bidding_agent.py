@@ -66,7 +66,9 @@ class BiddingAgent:
         self.opponent_teams = opponent_teams
         self.utility = 0
         self.items_won = []
+        self.lost_seen_items_by_round = []
         self.competitor_budgets = { opponent_team: self.budget for opponent_team in opponent_teams }
+        self.competitor_items = { opponent_team: [] for opponent_team in opponent_teams }
         self.seen_items_and_prices: Dict[str, float] = {}
 
         print("opponent teams:",opponent_teams)
@@ -112,6 +114,8 @@ class BiddingAgent:
         self.seen_items_and_prices[item_id] = price_paid
         if winning_team != self.team_id:
             self.competitor_budgets[winning_team] -= price_paid
+            self.competitor_items[winning_team].append(item_id)
+            self.lost_seen_items_by_round.append(item_id)
 
 
         self.item_beliefs.update_according_to_price(item_id, price_paid)
@@ -142,15 +146,19 @@ class BiddingAgent:
         # ============================================================
         signal_dict = calc_signals(SignalInput(
             item_id = item_id,
+            our_team=self.team_id,
             round_number = self.rounds_completed,
             our_budget = self.budget,
             competitor_budgets = self.competitor_budgets,
+            competitor_items=self.competitor_items,
             valuation_vector =  self.valuation_vector,
             posterior_vector = self.item_beliefs.beliefs,
             seen_items_and_prices = self.seen_items_and_prices,
-            current_utility = self.utility
+            current_utility = self.utility,
+            seen_items_ordered_by_round=self.lost_seen_items_by_round
         ))
-        bid = calc_bid(self.valuation_vector[item_id], signal_dict)
+
+        bid = calc_bid(self.valuation_vector[item_id], self.item_beliefs.beliefs[item_id], signal_dict)
         agent_logger.info(f"item: {item_id}, val: {self.valuation_vector[item_id]}, bid:, {bid}, signals: {signal_dict}")
         bid = max(0.0, min(bid, self.budget))
         

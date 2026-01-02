@@ -25,7 +25,7 @@ class RelativeBudgetSignal(Enum):
     AVG = auto()
     ABOVE_AVG = auto()
 
-dollar_utilization_threshold = 0.4
+dollar_utilization_threshold = 0.1
 class DollarUtilizationSignal(Enum):
     GEQ_THRESHOLD = auto()
     LESS_THRESHOLD = auto()
@@ -71,6 +71,11 @@ class UtilityRankSignal(Enum):
     RANK_4 = auto()
     RANK_5 = auto()
 
+class MaxItemGroupPosteriorSignal(Enum):
+    LOW = auto()
+    MIXED = auto()
+    HIGH = auto()
+
 @dataclass
 class SignalInput:
     item_id: str
@@ -115,7 +120,7 @@ def signal_dollar_utilization(input: SignalInput) -> DollarUtilizationSignal:
     posteriors = input.posterior_vector[input.item_id]
     expected_fourth_order = get_expected_ith_order(posteriors, 4)
     expected_utilization = (input.valuation_vector[input.item_id] - expected_fourth_order) / expected_fourth_order
-    print(f"for item {input.item_id}, dollar utilization: {expected_utilization}")
+    print(f"for item {input.item_id}, expected_fourth: {expected_fourth_order}, dollar utilization: {expected_utilization}")
     return (
         DollarUtilizationSignal.GEQ_THRESHOLD) \
             if expected_utilization >= dollar_utilization_threshold \
@@ -137,6 +142,9 @@ def signal_expected_utility_to_round_proportion(input: SignalInput) -> ExpectedU
     def get_expected_utility(value: float, belief: Belief) -> float:
         expected_fourth_order = get_expected_ith_order(belief, 4)
         return max(value - expected_fourth_order, 0.0)
+
+    if input.round_number == 0:
+        return ExpectedUtilityToRoundProportionSignal.CLOSE_TO_ONE
 
     expected_utility_out_of_remaining = [get_expected_utility(value, input.posterior_vector[item_id]) \
                                          for item_id,value in input.valuation_vector.items() \
@@ -169,7 +177,7 @@ def signal_budget_rank(input: SignalInput) -> BudgetRankSignal:
     The function takes a signal input and rate our budget base on other 4 players
     budget in the current round of the game
     """
-    all_budget = list(input.competitor_budgets) + [input.our_budget]
+    all_budget = list(input.competitor_budgets.values()) + [input.our_budget]
     sorted_budget = sorted(all_budget)
     our_rank_index = sorted_budget.index(input.our_budget)
     return list(BudgetRankSignal)[our_rank_index]
@@ -205,7 +213,7 @@ def signal_opponent_modeling(input: SignalInput) -> OpponentModelingSignal:
     if len(last_items) == 0:
         return OpponentModelingSignal.TRUTHFUL
 
-    diff_avg = sum([input.seen_items_and_prices[item_id] - get_closest_ith_order(item_id, input.posterior_vector[item_id], 4) \
+    diff_avg = sum([input.seen_items_and_prices[item_id] - get_closest_ith_order(input.posterior_vector[item_id], 4) \
                     for item_id in last_items]) / len(last_items)
 
     if -opponent_modeling_threshold <= diff_avg <= opponent_modeling_threshold:
@@ -222,7 +230,7 @@ def signal_utility_rank(input: SignalInput) -> UtilityRankSignal:
             continue
         competitor_utilities[team] = 0
         for won_item in won_items:
-            utility = max(get_closest_ith_order(won_item, input.posterior_vector[won_item], 5) - input.seen_items_and_prices[won_item],0)
+            utility = max(get_closest_ith_order(input.posterior_vector[won_item], 5) - input.seen_items_and_prices[won_item],0)
             competitor_utilities[team] += utility
 
     sorted_utilities = sorted(list(competitor_utilities.values()))
@@ -241,6 +249,18 @@ def signal_utility_rank(input: SignalInput) -> UtilityRankSignal:
                 return UtilityRankSignal.RANK_1
     return UtilityRankSignal.RANK_1
 
+def signal_max_item_group_posterior(input: SignalInput) -> MaxItemGroupPosteriorSignal:
+    posterior = input.posterior_vector[input.item_id]
+    max_posterior = max(posterior.p_high, posterior.p_mixed, posterior.p_low)
+
+    if posterior.p_mixed == max_posterior:
+        return MaxItemGroupPosteriorSignal.MIXED
+    if posterior.p_low == max_posterior:
+        return MaxItemGroupPosteriorSignal.LOW
+    if posterior.p_high == max_posterior:
+        return MaxItemGroupPosteriorSignal.HIGH
+    return MaxItemGroupPosteriorSignal.MIXED
+
 registered_signals = {
     RelativeBudgetSignal.__name__ : signal_relative_budget,
     DollarUtilizationSignal.__name__ : signal_dollar_utilization,
@@ -248,8 +268,15 @@ registered_signals = {
     ExpectedUtilityToRoundProportionSignal.__name__ : signal_expected_utility_to_round_proportion,
     PhaseSignal.__name__ : signal_phase,
     BudgetRankSignal.__name__ : signal_budget_rank,
-    SuccessRateSignal.__name__ : signal_success_rate
+    SuccessRateSignal.__name__ : signal_success_rate,
+    OpponentModelingSignal.__name__ : signal_opponent_modeling,
+    UtilityRankSignal.__name__ : signal_utility_rank,
+    MaxItemGroupPosteriorSignal.__name__ : signal_max_item_group_posterior,
 }
 
 def calc_signals(input: SignalInput):
-    return { signal_name: signal_func(input) for signal_name, signal_func in registered_signals.items() }
+    signals = {}
+    for signal_name, signal_func in registered_signals.items():
+        print("Evaluating signal:", signal_name)
+        signals[signal_name] = signal_func(input)
+    return signals
