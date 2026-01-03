@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Set
 
+from teams.ELELIL.bidding_agent import get_posteriors_from_values
+
 
 @dataclass
 class Belief:
@@ -47,16 +49,11 @@ class ItemBeliefs:
         self.expected_low_remainder = self.TOTAL_LOW
 
         self._update_group_possible_candidates()
-        self.beliefs = self._create_posteriors_from_values(self.valuation_vector)
+        self.beliefs = get_posteriors_from_values(valuation_vector, Belief(self.prior_high, self.prior_mixed, self.prior_low))
 
 
     def get(self, item_id: str) -> Belief:
         return self.beliefs[item_id]
-
-
-    def _init_beliefs(self):
-        for item_id, v in self.valuation_vector.items():
-            self.beliefs[item_id] = self._posterior_from_value(float(v))
 
     def update_according_to_price(self, item_id: str, price_paid: float):
         # For price p of item i with value v:
@@ -89,15 +86,15 @@ class ItemBeliefs:
 
     def _update_posteriors_of_unseens(self):
         unseen = {k:v for k,v in self.valuation_vector.items() if k not in self.seen_items}
-        posteriors = self._create_posteriors_from_values(unseen)
+        posteriors = get_posteriors_from_values(unseen, Belief(self.prior_high, self.prior_mixed, self.prior_low))
 
         # normalize posteriors such that sum_i(P(T_i=t)) = E[remaining items in t]
         normalized_posteriors = self._normalize_by_group_remainders(posteriors)
         for item_id, belief in normalized_posteriors.items():
             self.beliefs[item_id] = belief
 
-    def _create_posteriors_from_values(self, items: Dict[str, float]):
-        return {item_id : self._posterior_from_value(float(v)) for item_id,v in items.items()}
+    # def _create_posteriors_from_values(self, items: Dict[str, float]):
+    #     return {item_id : self._posterior_from_value(float(v)) for item_id,v in items.items()}
 
 
     """

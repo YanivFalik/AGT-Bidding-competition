@@ -49,7 +49,7 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
-from item_beliefs import ItemBeliefs
+from item_beliefs import ItemBeliefs, Belief
 from opponent_model import OpponentModeling
 
 class BiddingAgent:
@@ -163,3 +163,54 @@ class BiddingAgent:
         bid = max(0.0, min(bid, self.budget))
         
         return float(bid)
+
+
+""" ============================================================================================================
+================================= BELIEF CALCULATIONS ==========================================================
+============================================================================================================ """
+
+TOTAL_HIGH = 6
+TOTAL_MIXED = 10
+TOTAL_LOW = 4
+TOTAL_ITEMS = TOTAL_HIGH + TOTAL_MIXED + TOTAL_LOW
+
+VALUE_RANGE_LOW = [1,10]
+VALUE_RANGE_MIXED = [1,20]
+VALUE_RANGE_HIGH = [10,20]
+
+
+def get_posteriors_from_values(items: Dict[str, float], priors: Belief) -> Dict[str, Belief]:
+    return {item_id: posterior_from_value(float(v), priors) for item_id, v in items.items()}
+
+def posterior_from_value(v: float, priors: Belief, possible_highs: list[str] = None, possible_lows: list[str] = None) -> Belief:
+    # if the number of possible low items is exactly the size of the low item group,
+    # an item with value of less than 10 is surely low
+    if v >= VALUE_RANGE_HIGH[0]:
+        if possible_highs and len(possible_highs) == TOTAL_HIGH:
+            return Belief(1, 0, 0)
+
+    if v <= VALUE_RANGE_LOW[1]:
+        if possible_lows and len(possible_lows) == TOTAL_LOW:
+            return Belief(0, 0, 1)
+
+    # calculate f(v|T=t) for every value group
+    f_high = (1.0 / (VALUE_RANGE_HIGH[1] - VALUE_RANGE_HIGH[0])) if (
+            VALUE_RANGE_HIGH[0] <= v <= VALUE_RANGE_HIGH[1]) else 0.0
+    f_low = (1.0 / (VALUE_RANGE_LOW[1] - VALUE_RANGE_LOW[0])) if (
+            VALUE_RANGE_LOW[0] <= v <= VALUE_RANGE_LOW[1]) else 0.0
+    f_mixed = (1.0 / (VALUE_RANGE_MIXED[1] - VALUE_RANGE_MIXED[0])) if (
+            VALUE_RANGE_MIXED[0] <= v <= VALUE_RANGE_MIXED[1]) else 0.0
+
+    # calculate P(T=t)f(v|T=t)
+    w_high = priors.p_high * f_high
+    w_mixed = priors.p_mixed * f_mixed
+    w_low = priors.p_low * f_low
+    w_sum = w_high + w_mixed + w_low
+
+    # create new belief with ( P(T=high|v), P(T=mixed|v), P(T=low|v) )
+    return Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
+
+
+""" ============================================================================================================
+=============================== END BELIEF CALCULATIONS ========================================================
+============================================================================================================ """
