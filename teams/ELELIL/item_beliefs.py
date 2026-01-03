@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Set
 
 from teams.ELELIL.belief_functional import Belief, get_posteriors_from_values, get_posterior_with_price, \
-    get_group_possible_candidates, get_expected_remainders_from_seen, get_global_priors, get_posteriors_of_unseens
+    get_group_possible_candidates, get_expected_remainders_from_seen, get_global_priors, get_updated_posteriors_of_unseens
 
 """
 Main Flow:
@@ -50,29 +50,29 @@ class ItemBeliefs:
     def get(self, item_id: str) -> Belief:
         return self.beliefs[item_id]
 
-    def update_according_to_price(self, item_id: str, price_paid: float):
-        # For price p of item i with value v:
-        # calculate P(T_i=t | v,p) for every t in [LOW,MIXED,HIGH]
-        self.beliefs[item_id] = get_posterior_with_price(item_id, self.valuation_vector[item_id], price_paid, self.beliefs[item_id])
-        self.seen_items.add(item_id)
-
-        # SPECIAL CASE HANDLING: in case of P(T_i=MIXED)=1, remove i from the list of possible LOW/HIGH items
-        self.possible_highs, self.possible_lows = get_group_possible_candidates(self.valuation_vector, {})
-
-        # Calculate E[items remaining in group t] for every t in [LOW,MIXED,HIGH]
-        remainders = get_expected_remainders_from_seen(self.beliefs, self.seen_items)
-        self.expected_high_remainder = remainders.p_high
-        self.expected_mixed_remainder = remainders.p_mixed
-        self.expected_low_remainder = remainders.p_low
-
-        # Update P(T_i=t) to be E[items remaining in t]/E[items remaining] for every t in [LOW,MIXED,HIGH]
-        priors = get_global_priors(remainders)
-        self.prior_high = priors.p_high
-        self.prior_mixed = priors.p_mixed
-        self.prior_low = priors.p_low
-
-        # Update P(T_j | v) for all remaining items
-        self.beliefs = get_posteriors_of_unseens(self.valuation_vector, self.beliefs, self.seen_items, priors, remainders)
+    # def update_according_to_price(self, item_id: str, price_paid: float):
+    #     # For price p of item i with value v:
+    #     # calculate P(T_i=t | v,p) for every t in [LOW,MIXED,HIGH]
+    #     self.beliefs[item_id] = get_posterior_with_price(item_id, self.valuation_vector[item_id], price_paid, self.beliefs[item_id])
+    #     self.seen_items.add(item_id)
+    #
+    #     # SPECIAL CASE HANDLING: in case of P(T_i=MIXED)=1, remove i from the list of possible LOW/HIGH items
+    #     self.possible_highs, self.possible_lows = get_group_possible_candidates(self.valuation_vector, {})
+    #
+    #     # Calculate E[items remaining in group t] for every t in [LOW,MIXED,HIGH]
+    #     remainders = get_expected_remainders_from_seen(self.beliefs, self.seen_items)
+    #     self.expected_high_remainder = remainders.p_high
+    #     self.expected_mixed_remainder = remainders.p_mixed
+    #     self.expected_low_remainder = remainders.p_low
+    #
+    #     # Update P(T_i=t) to be E[items remaining in t]/E[items remaining] for every t in [LOW,MIXED,HIGH]
+    #     priors = get_global_priors(remainders)
+    #     self.prior_high = priors.p_high
+    #     self.prior_mixed = priors.p_mixed
+    #     self.prior_low = priors.p_low
+    #
+    #     # Update P(T_j | v) for all remaining items
+    #     self.beliefs = get_posteriors_of_unseens(self.valuation_vector, self.beliefs, self.seen_items, priors, remainders)
 
     # def _recompute_remainders_from_seen(self):
     #     expected_used_high = sum(self.beliefs[i].p_high for i in self.seen_items)

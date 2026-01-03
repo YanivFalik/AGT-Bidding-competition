@@ -4,6 +4,8 @@
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
+import numpy as np
+
 TOTAL_HIGH = 6
 TOTAL_MIXED = 10
 TOTAL_LOW = 4
@@ -18,6 +20,31 @@ class Belief:
     p_high: float
     p_mixed: float
     p_low: float
+
+def get_updated_beliefs_according_to_price(
+        item_id: str,
+        price_paid: float,
+        valuation_vector: Dict[str, float],
+        beliefs: Dict[str, Belief],
+        seen_items: set[str]
+    ):
+    # For price p of item i with value v:
+    # calculate P(T_i=t | v,p) for every t in [LOW,MIXED,HIGH]
+    beliefs[item_id] = get_posterior_with_price(item_id, valuation_vector[item_id], price_paid, beliefs[item_id])
+
+    # SPECIAL CASE HANDLING: in case of P(T_i=MIXED)=1, remove i from the list of possible LOW/HIGH items
+    possible_highs, possible_lows = get_group_possible_candidates(valuation_vector, {})
+
+    # Calculate E[items remaining in group t] for every t in [LOW,MIXED,HIGH]
+    remainders = get_expected_remainders_from_seen(beliefs, seen_items)
+
+    # Update P(T_i=t) to be E[items remaining in t]/E[items remaining] for every t in [LOW,MIXED,HIGH]
+    priors = get_global_priors(remainders)
+
+    # Update P(T_j | v) for all remaining items
+    beliefs = get_updated_posteriors_of_unseens(valuation_vector, beliefs, seen_items, priors, remainders)
+
+    return beliefs, priors
 
 def get_posteriors_from_values(items: Dict[str, float], priors: Belief) -> Dict[str, Belief]:
     return {item_id: posterior_from_value(float(v), priors) for item_id, v in items.items()}
@@ -191,7 +218,7 @@ def get_normalized_posteriors(posteriors: Dict[str, Belief], expected_remainders
         )
     return normalized_posteriors
 
-def get_posteriors_of_unseens(valuation_vector: Dict[str, float], beliefs: Dict[str, Belief], seen_items: set[str], priors: Belief, expected_remainders: Belief) -> Dict[str, Belief]:
+def get_updated_posteriors_of_unseens(valuation_vector: Dict[str, float], beliefs: Dict[str, Belief], seen_items: set[str], priors: Belief, expected_remainders: Belief) -> Dict[str, Belief]:
     unseen = {k:v for k,v in valuation_vector.items() if k not in seen_items}
     posteriors = get_posteriors_from_values(unseen, priors)
 
@@ -199,6 +226,29 @@ def get_posteriors_of_unseens(valuation_vector: Dict[str, float], beliefs: Dict[
     normalized_posteriors = get_normalized_posteriors(posteriors, expected_remainders)
     return { item_id : normalized_posteriors[item_id] if item_id in normalized_posteriors else beliefs[item_id] \
              for item_id in valuation_vector }
+
+def beliefs_summary(valuation_vector: Dict[str, float], beliefs: Dict[str, Belief], seen_items, priors: Belief, digits: int = 3) -> str:
+    fmt = f"{{:.{digits}f}}"
+    items = sorted(valuation_vector.items(), key=lambda x: x[1], reverse=True)
+
+    lines = []
+    lines.append(
+        "Item Beliefs (initial or updated)\n"
+        "--------------------------------\n"
+        "item_id   value   P(High)   P(Mixed)    P(Low)"
+    )
+    for item_id, v in items:
+        b = beliefs[item_id]
+        lines.append(
+            f"{item_id:<9} {v:>5.1f}   "
+            f"{fmt.format(b.p_high):>7}   {fmt.format(b.p_mixed):>7}   {fmt.format(b.p_low):>7}"
+            + ("   [SEEN]" if item_id in seen_items else "")
+        )
+    lines.append(
+        f"\nGlobal priors for unseen items: "
+        f"High={priors.p_high:.3f}, MIXED={priors.p_mixed:.3f}, Low={priors.p_low:.3f}"
+    )
+    return "\n".join(lines)
 
 """ ============================================================================================================
 =============================== END BELIEF CALCULATIONS ========================================================
