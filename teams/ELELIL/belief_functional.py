@@ -22,6 +22,14 @@ class Belief:
 def get_posteriors_from_values(items: Dict[str, float], priors: Belief) -> Dict[str, Belief]:
     return {item_id: posterior_from_value(float(v), priors) for item_id, v in items.items()}
 
+"""
+Bayes’ rule for continuous observations:
+Given PDF f, item i with value v, value group T (high, mixed, low) we get:
+
+P(T_i=t|v) = P(T_i=t)f(v|T_i=t) / sum_t'(P(T_i=t')f(v|T_i=t'))
+
+Where P(T_i=t) is the global prior updated each round
+"""
 def posterior_from_value(v: float, priors: Belief, possible_highs: list[str] = None, possible_lows: list[str] = None) -> Belief:
     # if the number of possible low items is exactly the size of the low item group,
     # an item with value of less than 10 is surely low
@@ -132,6 +140,65 @@ def get_expected_remainders_from_seen(beliefs: Dict[str, Belief], seen_items_and
     expected_mixed_remainder = max(0.0, TOTAL_MIXED - expected_used_mixed)
     expected_low_remainder = max(0.0, TOTAL_LOW - expected_used_low)
     return Belief(expected_high_remainder, expected_mixed_remainder, expected_low_remainder)
+
+
+"""
+In order to guess the remaining number of items in a value group t we can calculate the expected remainder as follows:
+    E[remaining items in t] = TOTAL_T - E[removed items in t]
+Where:
+    E[removed items in t] = sum_{i : removed items}P(T_i = t)
+
+Now we can estimate the probability of a random item i being in value group t as:
+    P(T_i=t) = E[remaining items in t]/total remaining items
+"""
+def get_global_priors(expected_remainders: Belief) -> Belief:
+    expected_items_left = expected_remainders.p_high + expected_remainders.p_mixed + expected_remainders.p_low
+    if expected_items_left <= 0:
+        return Belief(0,0,0)
+    return Belief(
+        expected_remainders.p_high / expected_items_left,
+        expected_remainders.p_mixed / expected_items_left,
+        expected_remainders.p_low / expected_items_left
+    )
+
+"""
+Update all posteriors such that sum_i(P(T_i=t)) = E[items remaining it t]
+This is done by calculating factors 
+"""
+def get_normalized_posteriors(posteriors: Dict[str, Belief], expected_remainders: Belief) -> Dict[str, Belief]:
+    cumulative_high_prob = sum(belief.p_high for belief in posteriors.values())
+    cumulative_mixed_prob = sum(belief.p_mixed for belief in posteriors.values())
+    cumulative_low_prob = sum(belief.p_low for belief in posteriors.values())
+
+    high_factor = expected_remainders.p_high / cumulative_high_prob if cumulative_high_prob > 0 else 1.0
+    mixed_factor = expected_remainders.p_mixed / cumulative_mixed_prob if cumulative_mixed_prob > 0 else 1.0
+    low_factor = expected_remainders.p_low / cumulative_low_prob if cumulative_low_prob > 0 else 1.0
+
+    normalized_posteriors = {}
+    for item_id, belief in posteriors.items():
+        factored_high = belief.p_high * high_factor
+        factored_low = belief.p_low * low_factor
+        factored_mixed = belief.p_mixed * mixed_factor
+        total_factor = factored_high + factored_low + factored_mixed
+        if total_factor == 0:
+            normalized_posteriors[item_id] = belief
+            continue
+
+        normalized_posteriors[item_id] = Belief(
+            factored_high / total_factor,
+            factored_mixed / total_factor,
+            factored_low / total_factor
+        )
+    return normalized_posteriors
+
+def get_posteriors_of_unseens(valuation_vector: Dict[str, float], beliefs: Dict[str, Belief], seen_items: set[str], priors: Belief, expected_remainders: Belief) -> Dict[str, Belief]:
+    unseen = {k:v for k,v in valuation_vector.items() if k not in seen_items}
+    posteriors = get_posteriors_from_values(unseen, priors)
+
+    # normalize posteriors such that sum_i(P(T_i=t)) = E[remaining items in t]
+    normalized_posteriors = get_normalized_posteriors(posteriors, expected_remainders)
+    return { item_id : normalized_posteriors[item_id] if item_id in normalized_posteriors else beliefs[item_id] \
+             for item_id in valuation_vector }
 
 """ ============================================================================================================
 =============================== END BELIEF CALCULATIONS ========================================================

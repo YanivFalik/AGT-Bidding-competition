@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Set
 
 from teams.ELELIL.belief_functional import Belief, get_posteriors_from_values, get_posterior_with_price, \
-    get_group_possible_candidates, get_expected_remainders_from_seen
+    get_group_possible_candidates, get_expected_remainders_from_seen, get_global_priors, get_posteriors_of_unseens
 
 """
 Main Flow:
@@ -66,10 +66,13 @@ class ItemBeliefs:
         self.expected_low_remainder = remainders.p_low
 
         # Update P(T_i=t) to be E[items remaining in t]/E[items remaining] for every t in [LOW,MIXED,HIGH]
-        self._update_global_priors()
+        priors = get_global_priors(remainders)
+        self.prior_high = priors.p_high
+        self.prior_mixed = priors.p_mixed
+        self.prior_low = priors.p_low
 
         # Update P(T_j | v) for all remaining items
-        self._update_posteriors_of_unseens()
+        self.beliefs = get_posteriors_of_unseens(self.valuation_vector, self.beliefs, self.seen_items, priors, remainders)
 
     # def _recompute_remainders_from_seen(self):
     #     expected_used_high = sum(self.beliefs[i].p_high for i in self.seen_items)
@@ -82,48 +85,48 @@ class ItemBeliefs:
     #     self.expected_low_remainder = max(0.0, self.TOTAL_LOW - expected_used_low)
 
 
-    def _update_posteriors_of_unseens(self):
-        unseen = {k:v for k,v in self.valuation_vector.items() if k not in self.seen_items}
-        posteriors = get_posteriors_from_values(unseen, Belief(self.prior_high, self.prior_mixed, self.prior_low))
-
-        # normalize posteriors such that sum_i(P(T_i=t)) = E[remaining items in t]
-        normalized_posteriors = self._normalize_by_group_remainders(posteriors)
-        for item_id, belief in normalized_posteriors.items():
-            self.beliefs[item_id] = belief
+    # def _update_posteriors_of_unseens(self):
+    #     unseen = {k:v for k,v in self.valuation_vector.items() if k not in self.seen_items}
+    #     posteriors = get_posteriors_from_values(unseen, Belief(self.prior_high, self.prior_mixed, self.prior_low))
+    #
+    #     # normalize posteriors such that sum_i(P(T_i=t)) = E[remaining items in t]
+    #     normalized_posteriors = self._normalize_by_group_remainders(posteriors)
+    #     for item_id, belief in normalized_posteriors.items():
+    #         self.beliefs[item_id] = belief
 
     # def _create_posteriors_from_values(self, items: Dict[str, float]):
     #     return {item_id : self._posterior_from_value(float(v)) for item_id,v in items.items()}
 
 
-    """
-    Update all posteriors such that sum_i(P(T_i=t)) = E[items remaining it t]
-    This is done by calculating factors 
-    """
-    def _normalize_by_group_remainders(self, posteriors: Dict[str, Belief]):
-        cumulative_high_prob = sum(belief.p_high for belief in posteriors.values())
-        cumulative_mixed_prob = sum(belief.p_mixed for belief in posteriors.values())
-        cumulative_low_prob = sum(belief.p_low for belief in posteriors.values())
-
-        high_factor = self.expected_high_remainder / cumulative_high_prob if cumulative_high_prob > 0 else 1.0
-        mixed_factor = self.expected_mixed_remainder / cumulative_mixed_prob if cumulative_mixed_prob > 0 else 1.0
-        low_factor = self.expected_low_remainder / cumulative_low_prob if cumulative_low_prob > 0 else 1.0
-
-        normalized_posteriors = {}
-        for item_id, belief in posteriors.items():
-            factored_high = belief.p_high * high_factor
-            factored_low = belief.p_low * low_factor
-            factored_mixed = belief.p_mixed * mixed_factor
-            total_factor = factored_high + factored_low + factored_mixed
-            if total_factor == 0:
-                normalized_posteriors[item_id] = belief
-                continue
-
-            normalized_posteriors[item_id] = Belief(
-                factored_high / total_factor,
-                factored_mixed / total_factor,
-                factored_low / total_factor
-            )
-        return normalized_posteriors
+    # """
+    # Update all posteriors such that sum_i(P(T_i=t)) = E[items remaining it t]
+    # This is done by calculating factors
+    # """
+    # def _normalize_by_group_remainders(self, posteriors: Dict[str, Belief]):
+    #     cumulative_high_prob = sum(belief.p_high for belief in posteriors.values())
+    #     cumulative_mixed_prob = sum(belief.p_mixed for belief in posteriors.values())
+    #     cumulative_low_prob = sum(belief.p_low for belief in posteriors.values())
+    #
+    #     high_factor = self.expected_high_remainder / cumulative_high_prob if cumulative_high_prob > 0 else 1.0
+    #     mixed_factor = self.expected_mixed_remainder / cumulative_mixed_prob if cumulative_mixed_prob > 0 else 1.0
+    #     low_factor = self.expected_low_remainder / cumulative_low_prob if cumulative_low_prob > 0 else 1.0
+    #
+    #     normalized_posteriors = {}
+    #     for item_id, belief in posteriors.items():
+    #         factored_high = belief.p_high * high_factor
+    #         factored_low = belief.p_low * low_factor
+    #         factored_mixed = belief.p_mixed * mixed_factor
+    #         total_factor = factored_high + factored_low + factored_mixed
+    #         if total_factor == 0:
+    #             normalized_posteriors[item_id] = belief
+    #             continue
+    #
+    #         normalized_posteriors[item_id] = Belief(
+    #             factored_high / total_factor,
+    #             factored_mixed / total_factor,
+    #             factored_low / total_factor
+    #         )
+    #     return normalized_posteriors
 
     # def _update_group_possible_candidates(self):
     #     self.possible_highs = [item_id for item_id, v in self.valuation_vector.items() if
@@ -132,42 +135,42 @@ class ItemBeliefs:
     #     self.possible_lows = [item_id for item_id, v in self.valuation_vector.items() if
     #                            v <= self.LOW_RANGE[1]
     #                           and (item_id not in self.beliefs or self.beliefs[item_id].p_mixed < 1)]
-
-    """
-    Bayes’ rule for continuous observations:
-    Given PDF f, item i with value v, value group T (high, mixed, low) we get:
-    
-    P(T_i=t|v) = P(T_i=t)f(v|T_i=t) / sum_t'(P(T_i=t')f(v|T_i=t'))
-    
-    Where P(T_i=t) is the global prior updated each round
-    """
-    def _posterior_from_value(self, v: float) -> Belief:
-        # if the number of possible low items is exactly the size of the low item group,
-        # an item with value of less than 10 is surely low
-        if v >= self.HIGH_RANGE[0]:
-            if len(self.possible_highs) == self.TOTAL_HIGH:
-                return Belief(1, 0, 0)
-
-        if v <= self.LOW_RANGE[1]:
-            if len(self.possible_lows) == self.TOTAL_LOW:
-                return Belief(0, 0, 1)
-
-        # calculate f(v|T=t) for every value group
-        f_high = (1.0 / (self.HIGH_RANGE[1] - self.HIGH_RANGE[0])) if (
-                self.HIGH_RANGE[0] <= v <= self.HIGH_RANGE[1]) else 0.0
-        f_low = (1.0 / (self.LOW_RANGE[1] - self.LOW_RANGE[0])) if (
-                self.LOW_RANGE[0] <= v <= self.LOW_RANGE[1]) else 0.0
-        f_mixed = (1.0 / (self.MIXED_RANGE[1] - self.MIXED_RANGE[0])) if (
-                self.MIXED_RANGE[0] <= v <= self.MIXED_RANGE[1]) else 0.0
-
-        # calculate P(T=t)f(v|T=t)
-        w_high = self.prior_high * f_high
-        w_mixed = self.prior_mixed * f_mixed
-        w_low = self.prior_low * f_low
-        w_sum = w_high + w_mixed + w_low
-
-        # create new belief with ( P(T=high|v), P(T=mixed|v), P(T=low|v) )
-        return Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
+    #
+    # """
+    # Bayes’ rule for continuous observations:
+    # Given PDF f, item i with value v, value group T (high, mixed, low) we get:
+    #
+    # P(T_i=t|v) = P(T_i=t)f(v|T_i=t) / sum_t'(P(T_i=t')f(v|T_i=t'))
+    #
+    # Where P(T_i=t) is the global prior updated each round
+    # """
+    # def _posterior_from_value(self, v: float) -> Belief:
+    #     # if the number of possible low items is exactly the size of the low item group,
+    #     # an item with value of less than 10 is surely low
+    #     if v >= self.HIGH_RANGE[0]:
+    #         if len(self.possible_highs) == self.TOTAL_HIGH:
+    #             return Belief(1, 0, 0)
+    #
+    #     if v <= self.LOW_RANGE[1]:
+    #         if len(self.possible_lows) == self.TOTAL_LOW:
+    #             return Belief(0, 0, 1)
+    #
+    #     # calculate f(v|T=t) for every value group
+    #     f_high = (1.0 / (self.HIGH_RANGE[1] - self.HIGH_RANGE[0])) if (
+    #             self.HIGH_RANGE[0] <= v <= self.HIGH_RANGE[1]) else 0.0
+    #     f_low = (1.0 / (self.LOW_RANGE[1] - self.LOW_RANGE[0])) if (
+    #             self.LOW_RANGE[0] <= v <= self.LOW_RANGE[1]) else 0.0
+    #     f_mixed = (1.0 / (self.MIXED_RANGE[1] - self.MIXED_RANGE[0])) if (
+    #             self.MIXED_RANGE[0] <= v <= self.MIXED_RANGE[1]) else 0.0
+    #
+    #     # calculate P(T=t)f(v|T=t)
+    #     w_high = self.prior_high * f_high
+    #     w_mixed = self.prior_mixed * f_mixed
+    #     w_low = self.prior_low * f_low
+    #     w_sum = w_high + w_mixed + w_low
+    #
+    #     # create new belief with ( P(T=high|v), P(T=mixed|v), P(T=low|v) )
+    #     return Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
 
     # """
     #     Bayes’ rule for continuous observations:
@@ -234,26 +237,26 @@ class ItemBeliefs:
     #     self.beliefs[item_id] = belief
 
 
-    """
-    In order to guess the remaining number of items in a value group t we can calculate the expected remainder as follows:
-        E[remaining items in t] = TOTAL_T - E[removed items in t]
-    Where:
-        E[removed items in t] = sum_{i : removed items}P(T_i = t)
-        
-    Now we can estimate the probability of a random item i being in value group t as:
-        P(T_i=t) = E[remaining items in t]/total remaining items
-    """
-    def _update_global_priors(self) -> None:
-        expected_items_left = self.expected_high_remainder + self.expected_low_remainder + self.expected_mixed_remainder
-        if expected_items_left <= 0:
-            self.prior_high = 0.0
-            self.prior_mixed = 0.0
-            self.prior_low = 0.0
-            return
-
-        self.prior_high = self.expected_high_remainder / expected_items_left
-        self.prior_mixed = self.expected_mixed_remainder / expected_items_left
-        self.prior_low = self.expected_low_remainder / expected_items_left
+    # """
+    # In order to guess the remaining number of items in a value group t we can calculate the expected remainder as follows:
+    #     E[remaining items in t] = TOTAL_T - E[removed items in t]
+    # Where:
+    #     E[removed items in t] = sum_{i : removed items}P(T_i = t)
+    #
+    # Now we can estimate the probability of a random item i being in value group t as:
+    #     P(T_i=t) = E[remaining items in t]/total remaining items
+    # """
+    # def _update_global_priors(self) -> None:
+    #     expected_items_left = self.expected_high_remainder + self.expected_low_remainder + self.expected_mixed_remainder
+    #     if expected_items_left <= 0:
+    #         self.prior_high = 0.0
+    #         self.prior_mixed = 0.0
+    #         self.prior_low = 0.0
+    #         return
+    #
+    #     self.prior_high = self.expected_high_remainder / expected_items_left
+    #     self.prior_mixed = self.expected_mixed_remainder / expected_items_left
+    #     self.prior_low = self.expected_low_remainder / expected_items_left
 
     # NOTE: __str__ should NOT take digits param; Python expects __str__(self) only.
     def to_str(self, digits: int = 3) -> str:
