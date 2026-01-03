@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Set
 
 from teams.ELELIL.belief_functional import Belief, get_posteriors_from_values, get_posterior_with_price, \
-    get_group_possible_candidates
+    get_group_possible_candidates, get_expected_remainders_from_seen
 
 """
 Main Flow:
@@ -53,7 +53,6 @@ class ItemBeliefs:
     def update_according_to_price(self, item_id: str, price_paid: float):
         # For price p of item i with value v:
         # calculate P(T_i=t | v,p) for every t in [LOW,MIXED,HIGH]
-        # self._update_posterior_with_price(item_id, price_paid)
         self.beliefs[item_id] = get_posterior_with_price(item_id, self.valuation_vector[item_id], price_paid, self.beliefs[item_id])
         self.seen_items.add(item_id)
 
@@ -61,7 +60,10 @@ class ItemBeliefs:
         self.possible_highs, self.possible_lows = get_group_possible_candidates(self.valuation_vector, {})
 
         # Calculate E[items remaining in group t] for every t in [LOW,MIXED,HIGH]
-        self._recompute_remainders_from_seen()
+        remainders = get_expected_remainders_from_seen(self.beliefs, self.seen_items)
+        self.expected_high_remainder = remainders.p_high
+        self.expected_mixed_remainder = remainders.p_mixed
+        self.expected_low_remainder = remainders.p_low
 
         # Update P(T_i=t) to be E[items remaining in t]/E[items remaining] for every t in [LOW,MIXED,HIGH]
         self._update_global_priors()
@@ -69,15 +71,15 @@ class ItemBeliefs:
         # Update P(T_j | v) for all remaining items
         self._update_posteriors_of_unseens()
 
-    def _recompute_remainders_from_seen(self):
-        expected_used_high = sum(self.beliefs[i].p_high for i in self.seen_items)
-        expected_used_mixed = sum(self.beliefs[i].p_mixed for i in self.seen_items)
-        expected_used_low = sum(self.beliefs[i].p_low for i in self.seen_items)
-
-        # Keep nonnegative (should already be, unless upstream logic forces too many)
-        self.expected_high_remainder = max(0.0, self.TOTAL_HIGH - expected_used_high)
-        self.expected_mixed_remainder = max(0.0, self.TOTAL_MIXED - expected_used_mixed)
-        self.expected_low_remainder = max(0.0, self.TOTAL_LOW - expected_used_low)
+    # def _recompute_remainders_from_seen(self):
+    #     expected_used_high = sum(self.beliefs[i].p_high for i in self.seen_items)
+    #     expected_used_mixed = sum(self.beliefs[i].p_mixed for i in self.seen_items)
+    #     expected_used_low = sum(self.beliefs[i].p_low for i in self.seen_items)
+    #
+    #     # Keep nonnegative (should already be, unless upstream logic forces too many)
+    #     self.expected_high_remainder = max(0.0, self.TOTAL_HIGH - expected_used_high)
+    #     self.expected_mixed_remainder = max(0.0, self.TOTAL_MIXED - expected_used_mixed)
+    #     self.expected_low_remainder = max(0.0, self.TOTAL_LOW - expected_used_low)
 
 
     def _update_posteriors_of_unseens(self):

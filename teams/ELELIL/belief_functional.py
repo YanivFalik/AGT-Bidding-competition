@@ -122,6 +122,17 @@ def get_group_possible_candidates(valuation_vector: Dict[str, float], beliefs: D
                           and (item_id not in beliefs or beliefs[item_id].p_mixed < 1)]
     return possible_highs, possible_lows
 
+def get_expected_remainders_from_seen(beliefs: Dict[str, Belief], seen_items_and_prices: set[str]) -> Belief:
+    expected_used_high = sum(beliefs[i].p_high for i in seen_items_and_prices)
+    expected_used_mixed = sum(beliefs[i].p_mixed for i in seen_items_and_prices)
+    expected_used_low = sum(beliefs[i].p_low for i in seen_items_and_prices)
+
+    # Keep nonnegative (should already be, unless upstream logic forces too many)
+    expected_high_remainder = max(0.0, TOTAL_HIGH - expected_used_high)
+    expected_mixed_remainder = max(0.0, TOTAL_MIXED - expected_used_mixed)
+    expected_low_remainder = max(0.0, TOTAL_LOW - expected_used_low)
+    return Belief(expected_high_remainder, expected_mixed_remainder, expected_low_remainder)
+
 """ ============================================================================================================
 =============================== END BELIEF CALCULATIONS ========================================================
 ============================================================================================================ """
