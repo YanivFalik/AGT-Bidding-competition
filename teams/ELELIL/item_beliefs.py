@@ -2,14 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Set
 
-from teams.ELELIL.bidding_agent import get_posteriors_from_values
-
-
-@dataclass
-class Belief:
-    p_high: float
-    p_mixed: float
-    p_low: float
+from teams.ELELIL.belief_functional import Belief, get_posteriors_from_values, get_posterior_with_price, \
+    get_group_possible_candidates
 
 """
 Main Flow:
@@ -48,7 +42,8 @@ class ItemBeliefs:
         self.expected_mixed_remainder = self.TOTAL_MIXED
         self.expected_low_remainder = self.TOTAL_LOW
 
-        self._update_group_possible_candidates()
+
+        self.possible_highs, self.possible_lows = get_group_possible_candidates(valuation_vector, {})
         self.beliefs = get_posteriors_from_values(valuation_vector, Belief(self.prior_high, self.prior_mixed, self.prior_low))
 
 
@@ -58,11 +53,12 @@ class ItemBeliefs:
     def update_according_to_price(self, item_id: str, price_paid: float):
         # For price p of item i with value v:
         # calculate P(T_i=t | v,p) for every t in [LOW,MIXED,HIGH]
-        self._update_posterior_with_price(item_id, price_paid)
+        # self._update_posterior_with_price(item_id, price_paid)
+        self.beliefs[item_id] = get_posterior_with_price(item_id, self.valuation_vector[item_id], price_paid, self.beliefs[item_id])
         self.seen_items.add(item_id)
 
         # SPECIAL CASE HANDLING: in case of P(T_i=MIXED)=1, remove i from the list of possible LOW/HIGH items
-        self._update_group_possible_candidates()
+        self.possible_highs, self.possible_lows = get_group_possible_candidates(self.valuation_vector, {})
 
         # Calculate E[items remaining in group t] for every t in [LOW,MIXED,HIGH]
         self._recompute_remainders_from_seen()
@@ -127,13 +123,13 @@ class ItemBeliefs:
             )
         return normalized_posteriors
 
-    def _update_group_possible_candidates(self):
-        self.possible_highs = [item_id for item_id, v in self.valuation_vector.items() if
-                               v >= self.HIGH_RANGE[0]
-                               and (item_id not in self.beliefs or self.beliefs[item_id].p_mixed < 1)]
-        self.possible_lows = [item_id for item_id, v in self.valuation_vector.items() if
-                               v <= self.LOW_RANGE[1]
-                              and (item_id not in self.beliefs or self.beliefs[item_id].p_mixed < 1)]
+    # def _update_group_possible_candidates(self):
+    #     self.possible_highs = [item_id for item_id, v in self.valuation_vector.items() if
+    #                            v >= self.HIGH_RANGE[0]
+    #                            and (item_id not in self.beliefs or self.beliefs[item_id].p_mixed < 1)]
+    #     self.possible_lows = [item_id for item_id, v in self.valuation_vector.items() if
+    #                            v <= self.LOW_RANGE[1]
+    #                           and (item_id not in self.beliefs or self.beliefs[item_id].p_mixed < 1)]
 
     """
     Bayes’ rule for continuous observations:
@@ -171,69 +167,69 @@ class ItemBeliefs:
         # create new belief with ( P(T=high|v), P(T=mixed|v), P(T=low|v) )
         return Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
 
-    """
-        Bayes’ rule for continuous observations:
-        Given:
-         - PDF f
-         - second highes bid (paid price) p
-         - priors for the item being in all item groups P(T=t|v) 
-         - value group T (high, mixed, low)
-
-        We can calculate the probability of the item being in each item group depending on the prior and the price paid: 
-        P(T=t|v,p) = P(T=t|v)l(p|T=t) / sum_t'(P(T=t'|v)l(p|T=t'))
-        
-        Where l is the likelihood of the second highest bid being p for an item of group t  
-    """
-    def _update_posterior_with_price(self, item_id: str, price_paid: float) -> None:
-        """
-        For n i.i.d. samples from Uniform[0,1], the density of the k-th order statistic (k-th item in increasing order) is:
-        f_k(y) = n!/((k-1)!(n-k)!)y^(k-1)(1-y)^(n-k)
-        Where:
-         - y = the value of the density function (which is also the probability to be lower than y because the samples are from Uniform[0,1]).
-         - k-1 = items below y
-         - n-k = items above y
-        
-        For:
-         - y = (p - min)/(max - min)
-         - n = 5 (number of agents)
-         - k = 4 (second highest = 4 statistic)
-        We get:
-        f_4(y) = 20y^3(1-y) / (min - max)
-        
-        Where the division by (min - max) is to shift our density to the range [min,max] instead of [0,1]
-        """
-        def second_highest_pdf_uniform(p_val: float, range_min: float, range_max: float) -> float:
-            if p_val < range_min or p_val > range_max:
-                return 0.0
-            y = (p_val - range_min) / (range_max - range_min)
-            return 20 * (y ** 3) * (1.0 - y) * (1.0 / (range_max - range_min))
-
-        prior_item = self.beliefs[item_id]
-        if prior_item.p_low == 1.0 and price_paid < self.LOW_RANGE[1] or prior_item.p_high == 1.0 and price_paid > self.HIGH_RANGE[0]:
-            return
-
-        like_low = second_highest_pdf_uniform(price_paid, self.LOW_RANGE[0], self.LOW_RANGE[1])
-        like_high = second_highest_pdf_uniform(price_paid, self.HIGH_RANGE[0], self.HIGH_RANGE[1])
-        like_mixed = second_highest_pdf_uniform(price_paid, self.MIXED_RANGE[0], self.MIXED_RANGE[1])
-
-        w_high = prior_item.p_high * like_high
-        w_mixed = prior_item.p_mixed * like_mixed
-        w_low = prior_item.p_low * like_low
-
-        w_sum = w_high + w_mixed + w_low
-
-        # Update item beliefs
-        belief: Belief
-        value = self.valuation_vector[item_id]
-
-        min_val = min(price_paid, value)
-        max_val = max(price_paid, value)
-        if min_val <= (self.LOW_RANGE[1] - self.MIXED_ENSURANCE_THRESHOLD) and  max_val >= (self.HIGH_RANGE[0] + self.MIXED_ENSURANCE_THRESHOLD):
-            belief = Belief(0, 1, 0)
-        else:
-            belief = Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
-
-        self.beliefs[item_id] = belief
+    # """
+    #     Bayes’ rule for continuous observations:
+    #     Given:
+    #      - PDF f
+    #      - second highes bid (paid price) p
+    #      - priors for the item being in all item groups P(T=t|v)
+    #      - value group T (high, mixed, low)
+    #
+    #     We can calculate the probability of the item being in each item group depending on the prior and the price paid:
+    #     P(T=t|v,p) = P(T=t|v)l(p|T=t) / sum_t'(P(T=t'|v)l(p|T=t'))
+    #
+    #     Where l is the likelihood of the second highest bid being p for an item of group t
+    # """
+    # def _update_posterior_with_price(self, item_id: str, price_paid: float) -> None:
+    #     """
+    #     For n i.i.d. samples from Uniform[0,1], the density of the k-th order statistic (k-th item in increasing order) is:
+    #     f_k(y) = n!/((k-1)!(n-k)!)y^(k-1)(1-y)^(n-k)
+    #     Where:
+    #      - y = the value of the density function (which is also the probability to be lower than y because the samples are from Uniform[0,1]).
+    #      - k-1 = items below y
+    #      - n-k = items above y
+    #
+    #     For:
+    #      - y = (p - min)/(max - min)
+    #      - n = 5 (number of agents)
+    #      - k = 4 (second highest = 4 statistic)
+    #     We get:
+    #     f_4(y) = 20y^3(1-y) / (min - max)
+    #
+    #     Where the division by (min - max) is to shift our density to the range [min,max] instead of [0,1]
+    #     """
+    #     def second_highest_pdf_uniform(p_val: float, range_min: float, range_max: float) -> float:
+    #         if p_val < range_min or p_val > range_max:
+    #             return 0.0
+    #         y = (p_val - range_min) / (range_max - range_min)
+    #         return 20 * (y ** 3) * (1.0 - y) * (1.0 / (range_max - range_min))
+    #
+    #     prior_item = self.beliefs[item_id]
+    #     if prior_item.p_low == 1.0 and price_paid < self.LOW_RANGE[1] or prior_item.p_high == 1.0 and price_paid > self.HIGH_RANGE[0]:
+    #         return
+    #
+    #     like_low = second_highest_pdf_uniform(price_paid, self.LOW_RANGE[0], self.LOW_RANGE[1])
+    #     like_high = second_highest_pdf_uniform(price_paid, self.HIGH_RANGE[0], self.HIGH_RANGE[1])
+    #     like_mixed = second_highest_pdf_uniform(price_paid, self.MIXED_RANGE[0], self.MIXED_RANGE[1])
+    #
+    #     w_high = prior_item.p_high * like_high
+    #     w_mixed = prior_item.p_mixed * like_mixed
+    #     w_low = prior_item.p_low * like_low
+    #
+    #     w_sum = w_high + w_mixed + w_low
+    #
+    #     # Update item beliefs
+    #     belief: Belief
+    #     value = self.valuation_vector[item_id]
+    #
+    #     min_val = min(price_paid, value)
+    #     max_val = max(price_paid, value)
+    #     if min_val <= (self.LOW_RANGE[1] - self.MIXED_ENSURANCE_THRESHOLD) and  max_val >= (self.HIGH_RANGE[0] + self.MIXED_ENSURANCE_THRESHOLD):
+    #         belief = Belief(0, 1, 0)
+    #     else:
+    #         belief = Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
+    #
+    #     self.beliefs[item_id] = belief
 
 
     """
