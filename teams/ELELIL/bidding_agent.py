@@ -179,9 +179,6 @@ class BiddingAgent:
         
         return True
     
-    def calc_shading(self, item_id: str) -> float: 
-        return 1
-    
     def bidding_function(self, item_id: str) -> float:
         my_valuation = self.valuation_vector.get(item_id, 0)
         
@@ -225,6 +222,12 @@ class BiddingAgent:
 
         bid = value * factor
         self.bid = bid
+
+        if strategy != STRATEGY_GUARD and bid > 16:
+            alpha = (8 - self.rounds_completed) / 8
+            round_shade = min(0.8 * alpha + 1 * (1-alpha), 1.0)
+            bid *= round_shade
+
         agent_logger.info(f"item: {item_id}, val: {self.valuation_vector[item_id]}, strategy: {strategy}, factor: {factor} bid:, {bid}")
 
         return max(0.0, min(bid, self.budget))
@@ -277,6 +280,12 @@ class BiddingAgent:
 
     # 'win', 'guard', 'truthful'
     def calc_strategy(self, value, group: str, confidence: float):
+        if group == GROUP_MIXED and confidence >= 0.6:
+            if value > 13:
+                return 'win'
+            else:
+                return 'guard'
+
         if confidence > 0.55:
             diff_from_fourth = get_diff_from_fourth_order(group, value)
             return 'guard' if diff_from_fourth < 0 else 'win'
