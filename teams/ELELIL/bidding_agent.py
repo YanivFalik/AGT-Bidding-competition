@@ -23,9 +23,6 @@ Key Features:
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from teams.ELELIL.agent_logger import _make_agent_logger, beliefs_summary
-
-
 @dataclass
 class Belief:
     p_high: float
@@ -39,8 +36,6 @@ class SeenItemData:
     price_paid: float
     round_seen: int
     potential_utility: float
-
-agent_logger = _make_agent_logger()
 
 HIGH_ORDER_STATISTICS = [11 + 2 / 3, 13 + 1 / 3, 15, 16 + 2 / 3, 18 + 1 / 3]
 MIXED_ORDER_STATISTICS = [4 + 1 / 6, 7 + 1 / 3, 10.5, 13 + 2 / 3, 16 + 5 / 6]
@@ -98,11 +93,6 @@ class BiddingAgent:
                 [item_id for item_id, value in self.valuation_vector.items() if value >= VALUE_RANGE_HIGH[0]],
                 [item_id for item_id, value in self.valuation_vector.items() if value <= VALUE_RANGE_LOW[1]]
         )
-        agent_logger.info(
-            f"init: team={self.team_id}, budget={self.budget}, rounds_completed={self.rounds_completed}"
-        )
-        agent_logger.info(beliefs_summary(self.valuation_vector, self.beliefs, self.seen_items, Belief(TOTAL_HIGH / TOTAL_ITEMS, TOTAL_MIXED / TOTAL_ITEMS, TOTAL_LOW / TOTAL_ITEMS)))
-
     
     def _update_available_budget(self, item_id: str, winning_team: str, 
                                  price_paid: float):
@@ -134,11 +124,6 @@ class BiddingAgent:
 
         # update beliefs of each value group
         self.beliefs, priors = get_updated_beliefs_according_to_price(item_id, price_paid, self.valuation_vector, self.beliefs, { item_id for item_id in self.seen_items })
-
-        agent_logger.info(
-            f"Round {self.rounds_completed}, item {item_id}, winner {winning_team}, price_paid {price_paid}"
-        )
-        agent_logger.info(beliefs_summary(self.valuation_vector, self.beliefs, self.seen_items, priors))
         
         return True
     
@@ -167,8 +152,6 @@ class BiddingAgent:
         if not guarding and bid > HIGH_ORDER_STATISTICS[3]:
             round_shade = linear_interpolation(0.8, 1.0, self.rounds_completed, 8)
             bid *= round_shade
-
-        agent_logger.info(f"item: {item_id}, val: {self.valuation_vector[item_id]}, guarding: {guarding}, factor: {factor} bid:, {bid}")
 
         return max(0.0, min(bid, self.budget))
 
