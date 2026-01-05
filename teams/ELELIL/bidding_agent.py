@@ -20,14 +20,13 @@ Key Features:
 import logging
 import math
 import os
-
-from src.config import LOW_VALUE_ITEMS
-# from src.state_machine import calc_bid
-from src.signals import calc_signals, SignalInput, low_order_statistics
 from dataclasses import dataclass
 
-from teams.ELELIL.belief_functional import Belief
-
+@dataclass
+class Belief:
+    p_high: float
+    p_mixed: float
+    p_low: float
 
 @dataclass
 class SeenItemData:
@@ -62,7 +61,6 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
-from item_beliefs import ItemBeliefs
 from opponent_model import OpponentModeling
 
 TOTAL_ROUNDS = 15
@@ -80,8 +78,8 @@ STRATEGY_GUARD = 'guard'
 STRATEGY_TRUTHFUL = 'truthful'
 
 def get_diff_from_fourth_order(group: str, item_value: float):
-    fourth_order = LOW_ORDER_STATISTICS[3] if group == 'low' \
-        else (MIXED_ORDER_STATISTICS[3] if group == 'mixed' else HIGH_ORDER_STATISTICS[3])
+    fourth_order = LOW_ORDER_STATISTICS[3] if group == GROUP_LOW \
+        else (MIXED_ORDER_STATISTICS[3] if group == GROUP_MIXED else HIGH_ORDER_STATISTICS[3])
     return item_value - fourth_order
 
 def get_most_likely_group_and_confidence(posteriors: Belief):
@@ -188,25 +186,6 @@ class BiddingAgent:
         rounds_remaining = self.total_rounds - self.rounds_completed
         if rounds_remaining <= 0:
             return 0.0
-        
-        # ============================================================
-        # TODO: IMPLEMENT YOUR BIDDING STRATEGY HERE
-        # ============================================================
-        # signal_dict = calc_signals(SignalInput(
-        #     item_id = item_id,
-        #     our_team=self.team_id,
-        #     round_number = self.rounds_completed,
-        #     our_budget = self.budget,
-        #     competitor_budgets = self.competitor_budgets,
-        #     competitor_items=self.competitor_items,
-        #     valuation_vector =  self.valuation_vector,
-        #     posterior_vector = self.beliefs,
-        #     seen_items_and_prices = self.seen_items_and_prices,
-        #     current_utility = self.utility,
-        #     seen_items_ordered_by_round=self.lost_seen_items_by_round
-        # ))
-        #
-        # bid = calc_bid(self.valuation_vector[item_id], self.beliefs[item_id], self.rounds_completed, signal_dict)
 
         value = self.valuation_vector[item_id]
         posteriors = self.beliefs[item_id]
@@ -282,35 +261,27 @@ class BiddingAgent:
     def calc_strategy(self, value, group: str, confidence: float):
         if group == GROUP_MIXED and confidence >= 0.6:
             if value > 13:
-                return 'win'
+                return STRATEGY_WIN
             else:
-                return 'guard'
+                return STRATEGY_GUARD
 
         if confidence > 0.55:
             diff_from_fourth = get_diff_from_fourth_order(group, value)
-            return 'guard' if diff_from_fourth < 0 else 'win'
+            return STRATEGY_GUARD if diff_from_fourth < 0 else STRATEGY_WIN
 
         if 8 <= value < 10:
-            return 'win'
+            return STRATEGY_WIN
 
         if 10 < value <= MIXED_ORDER_STATISTICS[3]:
-            return 'guard'
+            return STRATEGY_GUARD
 
         if value >= 18:
-            return 'win'
+            return STRATEGY_WIN
 
         if 0 <= value < 5:
-            return 'guard'
+            return STRATEGY_GUARD
 
-        return 'truthful'
-
-
-
-
-
-
-
-
+        return STRATEGY_TRUTHFUL
 
 """ ============================================================================================================
 ================================= BELIEF CALCULATIONS ==========================================================
