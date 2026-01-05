@@ -108,7 +108,6 @@ class ValuationGenerator:
             valuations[team_id] = self.generate_valuation_vector(
                 team_id, high_items, low_items, mixed_items
             )
-            print('valuation of', team_id, ':', valuations[team_id])
         
         return valuations, (high_items, low_items, mixed_items)
     

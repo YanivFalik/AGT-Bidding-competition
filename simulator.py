@@ -253,7 +253,7 @@ class Simulator:
         print(f"\n{'='*80}")
         
         # Performance assessment
-        print("\nPERFORMANCE ASSESSMENT:")
+        print("\nPERFORMANCE ASSESSMENT: "+str(win_rate))
         if win_rate >= 50:
             print("  ✓ Excellent! Your agent is competitive")
         elif win_rate >= 30:
