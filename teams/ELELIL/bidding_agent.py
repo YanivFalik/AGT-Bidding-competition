@@ -4,24 +4,27 @@ AGT Competition - Student Agent Template
 
 Team Name: ELELIL
 Members: 
-  - Alon Levy - 313163958
+  - Alon Levy 313163958
   - Elizabeth Pinhasov 207501594
   - Yaniv Falik 314083551
 
 Strategy Description:
-[Brief description of your bidding strategy]
+At each round we calculate the probabilities for each item to be in the following groups: low, mixed or high, based on our valuation of the item.
+After each round we update the probabilities for those groups based on the price paid for the last item sold.
+Then we create a bidding function which tells us which strategy to use based on the probability, our valuation and the item group.
+If we don’t think that we can win, we overbid so the winning team will pay more and spend more money.
+If we think we can win we make a truthful bid - meaning we offer our true value for the item.
 
 Key Features:
-- [Feature 1]
-- [Feature 2]
-- [Feature 3]
+- Probability tracking using Bayes’ theorem
+- Dynamic strategy according to expected fourth order statistic (i.e. expected second-highest bid)
+- Guarding (overbidding) in cases of low valuations to make opponent pay more
 """
-
-import math
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from teams.ELELIL.agent_logger import _make_agent_logger
+from teams.ELELIL.agent_logger import _make_agent_logger, beliefs_summary
+
 
 @dataclass
 class Belief:
@@ -73,7 +76,6 @@ def linear_interpolation(start: float, end: float, t: float, t_max: float) -> fl
 
 class BiddingAgent:
 
-    
     def __init__(self, team_id: str, valuation_vector: Dict[str, float], 
                  budget: float, opponent_teams: List[str]):
         self.team_id = team_id
@@ -152,7 +154,7 @@ class BiddingAgent:
         posteriors = self.beliefs[item_id]
         group, confidence = get_most_likely_group_and_confidence(posteriors)
 
-        # Should we overbid or be truthful
+        # Should we guard (overbid) or be truthful
         guarding = self.should_guard(value, group, confidence)
         if guarding:
             factor = self.calc_guard(value, group, confidence)
@@ -284,25 +286,28 @@ def posterior_from_value(v: float, priors: Belief, possible_highs: list[str] = N
     w_low = priors.p_low * f_low
     w_sum = w_high + w_mixed + w_low
 
+    # edge case. happened once.
+    if w_sum == 0:
+        return priors
+
     # create new belief with ( P(T=high|v), P(T=mixed|v), P(T=low|v) )
     return Belief(w_high / w_sum, w_mixed / w_sum, w_low / w_sum)
 
 
-"""
-        Bayes’ rule for continuous observations:
-        Given:
-         - PDF f
-         - second highes bid (paid price) p
-         - priors for the item being in all item groups P(T=t|v) 
-         - value group T (high, mixed, low)
-
-        We can calculate the probability of the item being in each item group depending on the prior and the price paid: 
-        P(T=t|v,p) = P(T=t|v)l(p|T=t) / sum_t'(P(T=t'|v)l(p|T=t'))
-
-        Where l is the likelihood of the second highest bid being p for an item of group t  
-    """
-
 MIXED_ENSURANCE_THRESHOLD = 0.1
+"""
+Bayes’ rule for continuous observations:
+Given:
+ - PDF f
+ - second highes bid (paid price) p
+ - priors for the item being in all item groups P(T=t|v) 
+ - value group T (high, mixed, low)
+
+We can calculate the probability of the item being in each item group depending on the prior and the price paid: 
+P(T=t|v,p) = P(T=t|v)l(p|T=t) / sum_t'(P(T=t'|v)l(p|T=t'))
+
+Where l is the likelihood of the second highest bid being p for an item of group t  
+"""
 def get_posterior_with_price(item_id: str, value: float, price_paid: float, posterior_without_price: Belief) -> Belief:
     """
     For n i.i.d. samples from Uniform[0,1], the density of the k-th order statistic (k-th item in increasing order) is:
@@ -311,17 +316,8 @@ def get_posterior_with_price(item_id: str, value: float, price_paid: float, post
      - y = the value of the density function (which is also the probability to be lower than y because the samples are from Uniform[0,1]).
      - k-1 = items below y
      - n-k = items above y
-
-    For:
-     - y = (p - min)/(max - min)
-     - n = 5 (number of agents)
-     - k = 4 (second highest = 4 statistic)
-    We get:
-    f_4(y) = 20y^3(1-y) / (min - max)
-
     Where the division by (min - max) is to shift our density to the range [min,max] instead of [0,1]
     """
-
     def second_highest_pdf_uniform(p_val: float, range_min: float, range_max: float) -> float:
         if p_val < range_min or p_val > range_max:
             return 0.0
@@ -364,7 +360,6 @@ def get_expected_remainders_from_seen(beliefs: Dict[str, Belief], seen_items_and
     expected_used_mixed = sum(beliefs[i].p_mixed for i in seen_items_and_prices)
     expected_used_low = sum(beliefs[i].p_low for i in seen_items_and_prices)
 
-    # Keep nonnegative (should already be, unless upstream logic forces too many)
     expected_high_remainder = max(0.0, TOTAL_HIGH - expected_used_high)
     expected_mixed_remainder = max(0.0, TOTAL_MIXED - expected_used_mixed)
     expected_low_remainder = max(0.0, TOTAL_LOW - expected_used_low)
@@ -373,7 +368,7 @@ def get_expected_remainders_from_seen(beliefs: Dict[str, Belief], seen_items_and
 
 """
 In order to guess the remaining number of items in a value group t we can calculate the expected remainder as follows:
-    E[remaining items in t] = TOTAL_T - E[removed items in t]
+    E[remaining items in t] = E[expected items remaining] - E[removed items in t]
 Where:
     E[removed items in t] = sum_{i : removed items}P(T_i = t)
 
@@ -435,29 +430,6 @@ def get_updated_posteriors_of_unseens(
     normalized_posteriors = get_normalized_posteriors(posteriors, expected_remainders)
     return { item_id : normalized_posteriors[item_id] if item_id in normalized_posteriors else beliefs[item_id] \
              for item_id in valuation_vector }
-
-def beliefs_summary(valuation_vector: Dict[str, float], beliefs: Dict[str, Belief], seen_items, priors: Belief, digits: int = 3) -> str:
-    fmt = f"{{:.{digits}f}}"
-    items = sorted(valuation_vector.items(), key=lambda x: x[1], reverse=True)
-
-    lines = []
-    lines.append(
-        "Item Beliefs (initial or updated)\n"
-        "--------------------------------\n"
-        "item_id   value   P(High)   P(Mixed)    P(Low)"
-    )
-    for item_id, v in items:
-        b = beliefs[item_id]
-        lines.append(
-            f"{item_id:<9} {v:>5.1f}   "
-            f"{fmt.format(b.p_high):>7}   {fmt.format(b.p_mixed):>7}   {fmt.format(b.p_low):>7}"
-            + ("   [SEEN]" if item_id in seen_items else "")
-        )
-    lines.append(
-        f"\nGlobal priors for unseen items: "
-        f"High={priors.p_high:.3f}, MIXED={priors.p_mixed:.3f}, Low={priors.p_low:.3f}"
-    )
-    return "\n".join(lines)
 
 """ ============================================================================================================
 =============================== END BELIEF CALCULATIONS ========================================================
