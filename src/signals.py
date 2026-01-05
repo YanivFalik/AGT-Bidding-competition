@@ -1,16 +1,6 @@
-# - Phase(Round number) -> { Early, Mid, Late }
-# - RelativeBudget(Budget, competitor budgets) -> { Above avg, Below avg, Avg }
-# - BudgetRank(Budget, competitor budgets) -> [1,5]
-# - DollarUtilization(item_value, item_posteriors)* = E[Utility]/E[Price Paid] -> { <=Threshold, >Threshold }
-# - RemainingValueProportion(seen_items, item_valuations) = sum(value of remaining items)/sum(value of all items) -> { 0-1/3, 1/3-2/3, 2/3-1 }
-# - ExpectedUtilityToRoundProportion** -> { <<1, =1, >>1 }
-# - OpponentModeling*** -> { Aggressive, Truthful, Conservative }
-# - SuccessRate(seen_items, current_utility) -> { HIGH, MID, LOW }
-# - ExpectedUtilityRank(current_utility, seen_items, paid_prices)**** -> [1,5]
-
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Dict, Callable, Tuple
+from typing import Dict
 
 from teams.ELELIL.item_beliefs import Belief
 

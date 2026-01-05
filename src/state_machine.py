@@ -5,6 +5,9 @@ from unittest import case
 from src.signals import *
 
 def win_or_guard(item_value):
+    # if we are between [8,10], overbid.
+    # If the item is mixed, there is probably a higher bidder and we pushed him to pay more
+    # If the item is low, we are probably the highest bidder and will win the item for a lower price
     if low_order_statistics[3] + 1 <= item_value <= 10:
         return mixed_order_statistics[3] - 0.5
 
@@ -112,29 +115,10 @@ def state_machine(item_value: float, posterior: Belief, signals: Dict[str, Enum]
            signals[ExpectedUtilityToRoundProportionSignal.__name__] != ExpectedUtilityToRoundProportionSignal.BELOW_ONE:
             m *= 0.85
 
-    m = min(max(m, 0.8), 1.2)
+    m = min(max(m, 1), 1.2)
     # final bid (never exceed value)
     bid = m * item_value
     return min(item_value, max(0.0, bid))
-
-# def state_machine_2(item_value: float, posterior: Belief, signals: Dict[str, Enum]) -> float: 
-#     max_post = max(posterior.p_high, posterior.p_mixed, posterior.p_low)
-#     if max_post == posterior.p_low: 
-#         if item_value > low_order_statistics[3]:
-#             return low_order_statistics[4]
-#         else: 
-#             return item_value
-
-#     if max_post == posterior.p_mixed:
-#         if item_value > high_order_statistics[3]:
-#             return 20 
-#         elif mixed_order_statistics[3] < item_value < high_order_statistics[3]: 
-#             return high_order_statistics[3] - 0.3
-#         else: 
-#             return item_value
-    
-#     if max_post == posterior.p_high: 
-#         return item_value
 
 
 def calc_bid(item_value: float, posterior: Belief, signals: Dict[str, Enum]):
