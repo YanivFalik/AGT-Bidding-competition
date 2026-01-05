@@ -98,7 +98,7 @@ relative_budget_tolerance = 0.1
 def signal_relative_budget(input: SignalInput) -> RelativeBudgetSignal:
     total_budget = sum(input.competitor_budgets.values())+input.our_budget
     ratio = input.our_budget / (total_budget/5)
-    print(input.competitor_budgets, total_budget, input.our_budget, ratio)
+    # print(input.competitor_budgets, total_budget, input.our_budget, ratio)
     if ratio <= 1 - relative_budget_tolerance:
         return RelativeBudgetSignal.BELOW_AVG
     if ratio >= 1 + relative_budget_tolerance:
@@ -109,8 +109,15 @@ def signal_relative_budget(input: SignalInput) -> RelativeBudgetSignal:
 def signal_dollar_utilization(input: SignalInput) -> DollarUtilizationSignal:
     posteriors = input.posterior_vector[input.item_id]
     expected_fourth_order = get_expected_ith_order(posteriors, 4)
+
+    value = input.valuation_vector[input.item_id]
+    expected_utility = (posteriors.p_low * (value - low_order_statistics[3])
+                        + posteriors.p_mixed * (value - mixed_order_statistics[3])
+                        + posteriors.p_high * (value - high_order_statistics[3]))
+    return DollarUtilizationSignal.GEQ_THRESHOLD if expected_utility > 0 else DollarUtilizationSignal.LESS_THRESHOLD
+
     expected_utilization = (input.valuation_vector[input.item_id] - expected_fourth_order) / expected_fourth_order
-    print(f"for item {input.item_id}, expected_fourth: {expected_fourth_order}, dollar utilization: {expected_utilization}")
+    # print(f"for item {input.item_id}, expected_fourth: {expected_fourth_order}, dollar utilization: {expected_utilization}")
     return (
         DollarUtilizationSignal.GEQ_THRESHOLD) \
             if expected_utilization >= dollar_utilization_threshold \
@@ -267,6 +274,5 @@ registered_signals = {
 def calc_signals(input: SignalInput):
     signals = {}
     for signal_name, signal_func in registered_signals.items():
-        print("Evaluating signal:", signal_name)
         signals[signal_name] = signal_func(input)
     return signals

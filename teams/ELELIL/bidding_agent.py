@@ -18,11 +18,24 @@ Key Features:
 """
 
 import logging
+import math
 import os
 
-from src.state_machine import calc_bid
-from src.signals import calc_signals, SignalInput
+from src.config import LOW_VALUE_ITEMS
+# from src.state_machine import calc_bid
+from src.signals import calc_signals, SignalInput, low_order_statistics
+from dataclasses import dataclass
 
+from teams.ELELIL.belief_functional import Belief
+
+
+@dataclass
+class SeenItemData:
+    item_id: str
+    winning_team: str
+    price_paid: float
+    round_seen: int
+    potential_utility: float
 
 def _make_agent_logger(name: str = "agent_tmp_logger") -> logging.Logger:
     logger = logging.getLogger(name)
@@ -52,6 +65,36 @@ if _THIS_DIR not in sys.path:
 from item_beliefs import ItemBeliefs
 from opponent_model import OpponentModeling
 
+TOTAL_ROUNDS = 15
+
+HIGH_ORDER_STATISTICS = [11 + 2 / 3, 13 + 1 / 3, 15, 16 + 2 / 3, 18 + 1 / 3]
+MIXED_ORDER_STATISTICS = [4 + 1 / 6, 7 + 1 / 3, 10.5, 13 + 2 / 3, 16 + 5 / 6]
+LOW_ORDER_STATISTICS = [2.5, 4, 5.5, 7, 8.5]
+
+GROUP_HIGH = 'high'
+GROUP_MIXED = 'mixed'
+GROUP_LOW = 'low'
+
+STRATEGY_WIN = 'win'
+STRATEGY_GUARD = 'guard'
+STRATEGY_TRUTHFUL = 'truthful'
+
+def get_diff_from_fourth_order(group: str, item_value: float):
+    fourth_order = LOW_ORDER_STATISTICS[3] if group == 'low' \
+        else (MIXED_ORDER_STATISTICS[3] if group == 'mixed' else HIGH_ORDER_STATISTICS[3])
+    return item_value - fourth_order
+
+def get_most_likely_group_and_confidence(posteriors: Belief):
+    max_posterior = max(posteriors.p_high, posteriors.p_low, posteriors.p_mixed)
+    group = ''
+    if posteriors.p_mixed == max_posterior:
+        group = GROUP_MIXED
+    elif posteriors.p_high == max_posterior:
+        group = GROUP_HIGH
+    else:
+        group = GROUP_LOW
+    return group, max_posterior
+
 class BiddingAgent:
 
     
@@ -62,6 +105,7 @@ class BiddingAgent:
         self.team_id = team_id
         self.valuation_vector = valuation_vector
         self.budget = budget
+        self.init_budget = budget
         self.initial_budget = budget
         self.opponent_teams = opponent_teams
         self.utility = 0
@@ -69,9 +113,10 @@ class BiddingAgent:
         self.lost_seen_items_by_round = []
         self.competitor_budgets = { opponent_team: self.budget for opponent_team in opponent_teams }
         self.competitor_items = { opponent_team: [] for opponent_team in opponent_teams }
+        self.seen_items: Dict[str, SeenItemData] = {}
         self.seen_items_and_prices: Dict[str, float] = {}
+        self.bid = 0
 
-        print("opponent teams:",opponent_teams)
 
         # Game state tracking
         self.rounds_completed = 0
@@ -115,11 +160,18 @@ class BiddingAgent:
             self.competitor_budgets[winning_team] -= price_paid
             self.competitor_items[winning_team].append(item_id)
             self.lost_seen_items_by_round.append(item_id)
+            self.seen_items[item_id] = SeenItemData(
+                item_id=item_id,
+                winning_team=winning_team,
+                price_paid=price_paid,
+                round_seen=self.rounds_completed,
+                potential_utility=max(0.0, self.valuation_vector[item_id] - price_paid)
+            )
 
 
         self.beliefs, priors = get_updated_beliefs_according_to_price(item_id, price_paid, self.valuation_vector, self.beliefs, { item_id for item_id in self.seen_items_and_prices })
         agent_logger.info(
-            f"Round {self.rounds_completed}, item {item_id}, winner {winning_team}, price_paid {price_paid}"
+            f"Round {self.rounds_completed}, item {item_id}, winner {winning_team}, price_paid {price_paid}, {('GUARDED' if math.fabs(self.bid-price_paid) < 0.01 else '')}"
         )
         agent_logger.info(beliefs_summary(self.valuation_vector, self.beliefs, self.seen_items_and_prices, priors))
 
@@ -143,25 +195,110 @@ class BiddingAgent:
         # ============================================================
         # TODO: IMPLEMENT YOUR BIDDING STRATEGY HERE
         # ============================================================
-        signal_dict = calc_signals(SignalInput(
-            item_id = item_id,
-            our_team=self.team_id,
-            round_number = self.rounds_completed,
-            our_budget = self.budget,
-            competitor_budgets = self.competitor_budgets,
-            competitor_items=self.competitor_items,
-            valuation_vector =  self.valuation_vector,
-            posterior_vector = self.beliefs,
-            seen_items_and_prices = self.seen_items_and_prices,
-            current_utility = self.utility,
-            seen_items_ordered_by_round=self.lost_seen_items_by_round
-        ))
+        # signal_dict = calc_signals(SignalInput(
+        #     item_id = item_id,
+        #     our_team=self.team_id,
+        #     round_number = self.rounds_completed,
+        #     our_budget = self.budget,
+        #     competitor_budgets = self.competitor_budgets,
+        #     competitor_items=self.competitor_items,
+        #     valuation_vector =  self.valuation_vector,
+        #     posterior_vector = self.beliefs,
+        #     seen_items_and_prices = self.seen_items_and_prices,
+        #     current_utility = self.utility,
+        #     seen_items_ordered_by_round=self.lost_seen_items_by_round
+        # ))
+        #
+        # bid = calc_bid(self.valuation_vector[item_id], self.beliefs[item_id], self.rounds_completed, signal_dict)
 
-        bid = calc_bid(self.valuation_vector[item_id], self.beliefs[item_id], signal_dict)
-        agent_logger.info(f"item: {item_id}, val: {self.valuation_vector[item_id]}, bid:, {bid}, signals: {signal_dict}")
-        bid = max(0.0, min(bid, self.budget))
-        
-        return float(bid)
+        value = self.valuation_vector[item_id]
+        posteriors = self.beliefs[item_id]
+
+        group, confidence = get_most_likely_group_and_confidence(posteriors)
+        strategy = self.calc_strategy(value, group, confidence)
+        if strategy == STRATEGY_GUARD:
+            factor = self.calc_guard(value, posteriors, group, confidence)
+        elif strategy == STRATEGY_WIN:
+            factor = self.calc_win(value, posteriors, group)
+        else:
+            factor = 1
+
+        bid = value * factor
+        self.bid = bid
+        agent_logger.info(f"item: {item_id}, val: {self.valuation_vector[item_id]}, strategy: {strategy}, factor: {factor} bid:, {bid}")
+
+        return max(0.0, min(bid, self.budget))
+
+    def calc_guard(self, value: float, posteriors: Belief, item_group: str, confidence: float, margin: float = 0):
+        if value < 5:
+            return (LOW_ORDER_STATISTICS[3] - margin) / value
+
+        if 10 < value:
+            return (MIXED_ORDER_STATISTICS[3] - margin) / value
+
+        if item_group == GROUP_HIGH and confidence >= 0.6:
+            return (HIGH_ORDER_STATISTICS[3] - margin) / value
+
+        return 1.4
+
+    def calc_win(self, value: float, posteriors: Belief, item_group: str):
+        def get_target_spending(round_proportion: float, epsilon: float = 0.5):
+            aggressiveness_by_round = math.pow(round_proportion, epsilon)
+            spend_budget_fraction = (self.init_budget - self.budget) / self.init_budget
+            return max(spend_budget_fraction / aggressiveness_by_round, 0.1)
+
+        def get_average_lost_utility():
+            lost_utilities = [item.potential_utility for item in self.seen_items.values() if item.potential_utility > 0]
+            if len(lost_utilities) == 0:
+                return 0
+            return sum(lost_utilities) / len(lost_utilities)
+
+        proportional_round = (self.rounds_completed+1) / TOTAL_ROUNDS
+
+        factor = 1.0
+        if get_target_spending(proportional_round, 0.8) < 1:
+            factor *= 1.2
+        else:
+            factor *= 1
+
+        if get_average_lost_utility() > 1:
+            factor *= 1.3
+        elif get_average_lost_utility() > 0:
+            factor *= 1.2
+        else:
+            factor *= 1
+
+        agent_logger.info(f"item: {item_group}, factor: {factor}, target spending: {get_target_spending(proportional_round, 0.8)}, 'average loss: {get_average_lost_utility()}")
+        factor = min(max(factor, 0.8), 1.4)
+        if item_group in [GROUP_HIGH]:
+            factor = 1 # if high, be truthful
+
+        return factor
+
+    # 'win', 'guard', 'truthful'
+    def calc_strategy(self, value, group: str, confidence: float):
+        if confidence > 0.55:
+            diff_from_fourth = get_diff_from_fourth_order(group, value)
+            return 'guard' if diff_from_fourth < 0 else 'win'
+
+        if 8 <= value < 10:
+            return 'win'
+
+        if 10 < value <= MIXED_ORDER_STATISTICS[3]:
+            return 'guard'
+
+        if value >= 18:
+            return 'win'
+
+        if 0 <= value < 5:
+            return 'guard'
+
+        return 'truthful'
+
+
+
+
+
 
 
 
@@ -169,12 +306,6 @@ class BiddingAgent:
 """ ============================================================================================================
 ================================= BELIEF CALCULATIONS ==========================================================
 ============================================================================================================ """
-
-"""
-
-"""
-
-from dataclasses import dataclass
 
 TOTAL_HIGH = 6
 TOTAL_MIXED = 10

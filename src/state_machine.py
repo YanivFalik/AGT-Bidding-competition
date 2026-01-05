@@ -11,10 +11,17 @@ def win_or_guard(item_value):
     if low_order_statistics[3] + 1 <= item_value <= 10:
         return mixed_order_statistics[3] - 0.5
 
+    # between [13+2/3,16+2/3]
+    # offer price ~ 16+2/3
     if mixed_order_statistics[3] <= item_value <= high_order_statistics[3]:
-        return (high_order_statistics[3] - 0.5) * 0.9
+        return high_order_statistics[3] - 0.5
 
-    return item_value * 0.8
+    # between [10,13+2/3]
+    # Whether the item is mixed or high, there is probably a higher bidder, so overbid
+    if 10 < item_value <= mixed_order_statistics[3]:
+        return 15
+
+    return item_value
 
 
 
@@ -27,12 +34,12 @@ def state_machine(item_value: float, posterior: Belief, signals: Dict[str, Enum]
     # --- base multiplier starts neutral ---
     m = 1.0
 
-    # 1) Item-level desirability: DollarUtilization
-    match signals[DollarUtilizationSignal.__name__]:
-        case DollarUtilizationSignal.GEQ_THRESHOLD:
-            m *= 1.40
-        case DollarUtilizationSignal.LESS_THRESHOLD:
-            m *= 0.60
+    # # 1) Item-level desirability: DollarUtilization
+    # match signals[DollarUtilizationSignal.__name__]:
+    #     case DollarUtilizationSignal.GEQ_THRESHOLD:
+    #         m *= 1.40
+    #     case DollarUtilizationSignal.LESS_THRESHOLD:
+    #         m *= 0.60
 
     # 2) Are we behind/at/ahead of schedule? (utility vs time)
     match signals[ExpectedUtilityToRoundProportionSignal.__name__]:
@@ -52,14 +59,14 @@ def state_machine(item_value: float, posterior: Belief, signals: Dict[str, Enum]
         case RemainingValueProportionSignal.HIGH:
             m *= 0.95
 
-    # 4) Opponent market behavior
-    match signals[OpponentModelingSignal.__name__]:
-        case OpponentModelingSignal.AGGRESSIVE:
-            m *= 1.10
-        case OpponentModelingSignal.TRUTHFUL:
-            m *= 1.00
-        case OpponentModelingSignal.CONSERVATIVE:
-            m *= 0.92
+    # # 4) Opponent market behavior
+    # match signals[OpponentModelingSignal.__name__]:
+    #     case OpponentModelingSignal.AGGRESSIVE:
+    #         m *= 1.10
+    #     case OpponentModelingSignal.TRUTHFUL:
+    #         m *= 1.00
+    #     case OpponentModelingSignal.CONSERVATIVE:
+    #         m *= 0.92
 
     # 5) Budget position (use both rank + relative budget, gently)
     match signals[BudgetRankSignal.__name__]:
@@ -113,24 +120,76 @@ def state_machine(item_value: float, posterior: Belief, signals: Dict[str, Enum]
     if signals[MaxItemGroupPosteriorSignal.__name__] == MaxItemGroupPosteriorSignal.LOW:
         if signals[PhaseSignal.__name__] == PhaseSignal.LATE_PHASE and \
            signals[ExpectedUtilityToRoundProportionSignal.__name__] != ExpectedUtilityToRoundProportionSignal.BELOW_ONE:
-            m *= 0.85
+            m *= 1
 
-    m = min(max(m, 1), 1.2)
+    m = min(max(m, 0.9), 1.2)
     # final bid (never exceed value)
     bid = m * item_value
     return min(item_value, max(0.0, bid))
 
 
-def calc_bid(item_value: float, posterior: Belief, signals: Dict[str, Enum]):
-    print("Signals:\n"+str(signals))
+'''
+RelativeBudgetSignal.__name__ : ,
+DollarUtilizationSignal.__name__ : ?,
+RemainingValueProportionSignal.__name__ : ,
+ExpectedUtilityToRoundProportionSignal.__name__ : ,
+PhaseSignal.__name__ : ,
+BudgetRankSignal.__name__ : ,
+SuccessRateSignal.__name__ : ,
+OpponentModelingSignal.__name__ : ?,
+UtilityRankSignal.__name__ : ,
+MaxItemGroupPosteriorSignal.__name__ : ,
+'''
+
+def state_machine_2(item_value: float, posterior: Belief, signals: Dict[str, Enum]):
+    bid = 0
+
+    match signals[MaxItemGroupPosteriorSignal.__name__]:
+        case MaxItemGroupPosteriorSignal.LOW:
+
+            match signals[RelativeBudgetSignal.__name__]:
+                case BudgetRankSignal.RANK_1 | BudgetRankSignal.RANK_2:
+
+                    bid = 10 if item_value >= low_order_statistics[3] else item_value
+
+                case _:
+                    bid = item_value
+
+        case MaxItemGroupPosteriorSignal.MIXED:
+
+            match signals[RelativeBudgetSignal.__name__]:
+                case BudgetRankSignal.RANK_1 | BudgetRankSignal.RANK_2:
+
+                    bid = mixed_order_statistics[4] if item_value >= mixed_order_statistics[3] else item_value
+
+                case _:
+                    bid = item_value
+
+
+        case MaxItemGroupPosteriorSignal.HIGH:
+
+            match signals[RelativeBudgetSignal.__name__]:
+                case BudgetRankSignal.RANK_1 | BudgetRankSignal.RANK_2:
+
+                    bid = high_order_statistics[4] if item_value >= high_order_statistics[3] else item_value
+
+                case _:
+                    bid = item_value
+
+    return bid
+
+def calc_bid(item_value: float, posterior: Belief, round: int, signals: Dict[str, Enum]):
     sorted_posteriors = sorted([posterior.p_high, posterior.p_mixed, posterior.p_low])
     highest_post = sorted_posteriors[-1]
     second_highest_post = sorted_posteriors[-2]
 
-    if highest_post - second_highest_post <= 0.25:
+    print("round: ",round,' ', end='')
+    if highest_post - second_highest_post <= 0.2:
+        print("win or guard")
         return win_or_guard(item_value)
 
-    return state_machine(item_value, posterior, signals)
+    print("state machine")
+    return state_machine_2(item_value, posterior, signals)
 
 
 

@@ -328,8 +328,9 @@ def main():
         sys.exit(1)
     
     # Setup opponents
-    opponents = []
+    opponents = None
     if args.opponent:
+        opponents = []
         paths = args.opponent.split(",")
         opponent_paths = [Path(p) for p in paths]
         for i, opponent_path in enumerate(opponent_paths):
